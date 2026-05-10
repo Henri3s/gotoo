@@ -51,7 +51,7 @@ struct RulesView: View {
     }
     
     private func addRule() {
-        let rule = FileRule(name: "新规则", watchPath: appState.currentDirectory.path)
+        let rule = FileRule(name: "新规则", watchPath: appState.paneManager.activePane.currentDirectory.path)
         modelContext.insert(rule)
         selectedRule = rule
         showingEditor = true

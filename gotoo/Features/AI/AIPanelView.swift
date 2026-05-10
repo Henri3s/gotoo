@@ -72,7 +72,7 @@ struct AIPanelView: View {
         
         // Build context
         var context = ""
-        if let files = try? fileEngine.contents(of: appState.currentDirectory) {
+        if let files = try? fileEngine.contents(of: appState.paneManager.activePane.currentDirectory) {
             context = files.map { f in
                 "\(f.name) \(f.isDirectory ? "[文件夹]" : "\(f.formattedSize)")"
             }.joined(separator: "\n")
