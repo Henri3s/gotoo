@@ -21,6 +21,17 @@ final class AppState {
     // 自定义收藏夹
     var customFavorites: [(String, URL)] = []
     
-    // 全局搜索
-    var globalSearchQuery = ""
+    // 规则监控
+    var ruleMonitor = RuleMonitor()
+    var isMonitoringEnabled = false
+    
+    func toggleMonitoring(rules: [FileRule]) {
+        if isMonitoringEnabled {
+            ruleMonitor.stopMonitoring()
+            isMonitoringEnabled = false
+        } else {
+            ruleMonitor.startMonitoring(rules: rules)
+            isMonitoringEnabled = true
+        }
+    }
 }
