@@ -1,28 +1,41 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// 单个面板视图（含标签页、文件列表、拖放）
+/// 单个面板视图（含标签页、文件列表、拖放、预览）
 struct PaneView: View {
     @Bindable var pane: PaneState
     let isActive: Bool
+    let onDropToPane: ((FileItem, PaneState) -> Void)?
     let fileEngine = FileEngine()
+    @State private var previewFile: FileItem?
+    @State private var renameTarget: FileItem?
+    @State private var newName = ""
+    
+    init(pane: PaneState, isActive: Bool, onDropToPane: ((FileItem, PaneState) -> Void)? = nil) {
+        self._pane = .init(wrappedValue: pane)
+        self.isActive = isActive
+        self.onDropToPane = onDropToPane
+    }
     
     var body: some View {
         VStack(spacing: 0) {
-            // 标签栏
             tabBar
-            
-            // 地址栏
             addressBar
-            
             Divider()
             
-            // 文件列表
-            fileListBody
+            HStack(spacing: 0) {
+                // 文件列表
+                fileListBody
+                
+                // 预览面板
+                if let file = previewFile {
+                    Divider()
+                    FilePreviewView(file: file)
+                        .frame(width: 250)
+                }
+            }
             
             Divider()
-            
-            // 状态栏
             statusBar
         }
         .overlay(
@@ -41,20 +54,15 @@ struct PaneView: View {
                 ForEach(pane.tabs) { tab in
                     HStack(spacing: 4) {
                         Image(systemName: "folder")
-                            .font(.caption2)
+                            .font(.system(size: 9))
                             .foregroundStyle(.secondary)
                         Text(tab.title)
                             .font(.caption)
                             .lineLimit(1)
                         
                         if pane.tabs.count > 1 {
-                            Button {
-                                pane.closeTab(id: tab.id)
-                                loadFiles()
-                            } label: {
-                                Image(systemName: "xmark")
-                                    .font(.system(size: 8))
-                                    .foregroundStyle(.secondary)
+                            Button { pane.closeTab(id: tab.id); loadFiles() } label: {
+                                Image(systemName: "xmark").font(.system(size: 7)).foregroundStyle(.secondary)
                             }
                             .buttonStyle(.plain)
                         }
@@ -65,14 +73,8 @@ struct PaneView: View {
                     .onTapGesture { pane.switchTab(id: tab.id); loadFiles() }
                 }
                 
-                // 新建标签按钮
-                Button {
-                    pane.addTab(directory: pane.currentDirectory)
-                    loadFiles()
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+                Button { pane.addTab(directory: pane.currentDirectory); loadFiles() } label: {
+                    Image(systemName: "plus").font(.system(size: 9)).foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
                 .padding(.horizontal, 6)
@@ -87,45 +89,39 @@ struct PaneView: View {
     
     private var addressBar: some View {
         HStack(spacing: 6) {
-            // 后退
             Button {
                 let parent = pane.currentDirectory.deletingLastPathComponent()
                 pane.navigateTo(parent)
             } label: {
-                Image(systemName: "chevron.left")
-                    .font(.caption)
+                Image(systemName: "chevron.left").font(.caption)
             }
             .buttonStyle(.plain)
             .disabled(pane.currentDirectory.pathComponents.count <= 1)
             
-            // 路径
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 1) {
                     let comps = pane.currentDirectory.pathComponents
                     ForEach(Array(comps.indices), id: \.self) { i in
-                        if i > 0 {
-                            Text("/")
-                                .font(.caption2)
-                                .foregroundStyle(.tertiary)
-                        }
+                        if i > 0 { Text("/").font(.caption2).foregroundStyle(.tertiary) }
                         let partial = "/" + comps[0...i].joined(separator: "/")
                         let url = URL(fileURLWithPath: partial)
-                        Button(url.lastPathComponent) {
-                            pane.navigateTo(url)
-                        }
-                        .buttonStyle(.plain)
-                        .font(.caption)
-                        .foregroundStyle(i == comps.count - 1 ? .primary : .secondary)
+                        Button(url.lastPathComponent) { pane.navigateTo(url) }
+                            .buttonStyle(.plain).font(.caption)
+                            .foregroundStyle(i == comps.count - 1 ? .primary : .secondary)
                     }
                 }
             }
             
             Spacer()
             
-            // 刷新
+            Button { previewFile = nil } label: {
+                Image(systemName: "eye").font(.caption)
+            }
+            .buttonStyle(.plain)
+            .opacity(previewFile != nil ? 1 : 0.4)
+            
             Button { loadFiles() } label: {
-                Image(systemName: "arrow.clockwise")
-                    .font(.caption)
+                Image(systemName: "arrow.clockwise").font(.caption)
             }
             .buttonStyle(.plain)
         }
@@ -149,11 +145,8 @@ struct PaneView: View {
                 FileRow(file: file)
                     .tag(file.url)
                     .onTapGesture(count: 2) {
-                        if file.isDirectory {
-                            pane.navigateTo(file.url)
-                        } else {
-                            NSWorkspace.shared.open(file.url)
-                        }
+                        if file.isDirectory { pane.navigateTo(file.url) }
+                        else { NSWorkspace.shared.open(file.url) }
                     }
                     .contextMenu { fileContextMenu(for: file) }
             }
@@ -169,6 +162,14 @@ struct PaneView: View {
         .onDrop(of: [.fileURL], isTargeted: nil) { providers in
             handleDrop(providers)
         }
+        .onChange(of: pane.selectedFiles) { _, newSelection in
+            if let firstURL = newSelection.first,
+               let firstFile = files.first(where: { $0.url == firstURL }) {
+                previewFile = firstFile
+            } else {
+                previewFile = nil
+            }
+        }
     }
     
     // MARK: - Status Bar
@@ -176,18 +177,15 @@ struct PaneView: View {
     private var statusBar: some View {
         HStack {
             Text("\(filteredFiles.count) 个项目")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
+                .font(.caption2).foregroundStyle(.secondary)
             if !pane.selectedFiles.isEmpty {
                 Text("· 已选 \(pane.selectedFiles.count) 个")
-                    .font(.caption2)
-                    .foregroundStyle(Color.accentColor)
+                    .font(.caption2).foregroundStyle(Color.accentColor)
             }
             Spacer()
             if let vol = volumeFreeSpace(for: pane.currentDirectory) {
                 Text("可用 \(ByteCountFormatter.string(fromByteCount: vol, countStyle: .file))")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .font(.caption2).foregroundStyle(.secondary)
             }
         }
         .padding(.horizontal, 10)
@@ -195,7 +193,7 @@ struct PaneView: View {
         .background(.bar)
     }
     
-    // MARK: - Context Menu
+    // MARK: - Enhanced Context Menu
     
     @ViewBuilder
     private func fileContextMenu(for file: FileItem) -> some View {
@@ -206,13 +204,52 @@ struct PaneView: View {
         Button("在 Finder 中显示") {
             NSWorkspace.shared.activateFileViewerSelecting([file.url])
         }
+        Button(file.isDirectory ? "在终端中打开" : "用...打开") {
+            if file.isDirectory {
+                // Open Terminal at this directory
+                let task = Process()
+                task.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+                task.arguments = ["-a", "Terminal", file.url.path]
+                try? task.run()
+            } else {
+                NSWorkspace.shared.open(file.url)
+            }
+        }
+        
         Divider()
+        
+        Button("预览") { previewFile = file }
+        
+        Button("拷贝路径") {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(file.url.path, forType: .string)
+        }
+        
+        Divider()
+        
         Button("新建文件夹") {
             if let url = try? fileEngine.createFolder(at: pane.currentDirectory, name: "未命名文件夹") {
                 loadFiles()
             }
         }
+        
+        Button("重命名") {
+            renameTarget = file
+            newName = file.name
+        }
+        
         Divider()
+        
+        if !pane.selectedFiles.isEmpty && pane.selectedFiles.count > 1 {
+            Button("批量删除 (\(pane.selectedFiles.count) 个文件)", role: .destructive) {
+                for url in pane.selectedFiles {
+                    try? fileEngine.trash(url)
+                }
+                pane.selectedFiles.removeAll()
+                loadFiles()
+            }
+        }
+        
         Button("移到废纸篓", role: .destructive) {
             try? fileEngine.trash(file.url)
             loadFiles()

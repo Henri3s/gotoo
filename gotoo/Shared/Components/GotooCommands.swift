@@ -28,22 +28,23 @@ struct GotooCommands: Commands {
             Button("切换到下一个面板") {
                 appState.paneManager.nextPane()
             }
-            .keyboardShortcut("u", modifiers: [.command])
+            .keyboardShortcut("u")
             
-            Button("单栏布局") {
-                appState.paneManager.setLayout(.single)
-            }
-            .keyboardShortcut("1", modifiers: [.command, .shift])
+            Divider()
             
-            Button("双栏布局") {
-                appState.paneManager.setLayout(.dual)
-            }
-            .keyboardShortcut("2", modifiers: [.command, .shift])
-            
-            Button("三栏布局") {
-                appState.paneManager.setLayout(.triple)
-            }
-            .keyboardShortcut("3", modifiers: [.command, .shift])
+            Button("单栏布局") { appState.paneManager.setLayout(.single) }
+                .keyboardShortcut("1", modifiers: [.command, .shift])
+            Button("双栏布局") { appState.paneManager.setLayout(.dual) }
+                .keyboardShortcut("2", modifiers: [.command, .shift])
+            Button("三栏布局") { appState.paneManager.setLayout(.triple) }
+                .keyboardShortcut("3", modifiers: [.command, .shift])
+        }
+        
+        CommandMenu("视图") {
+            Button("切换侧边栏") { }
+                .keyboardShortcut("s", modifiers: [.command, .shift])
+            Button("切换预览面板") { }
+                .keyboardShortcut("p", modifiers: [.command, .shift])
         }
         
         CommandMenu("AI") {
@@ -54,6 +55,10 @@ struct GotooCommands: Commands {
         }
         
         CommandMenu("文件操作") {
+            Button("拷贝路径") { }
+                .keyboardShortcut("c", modifiers: [.command, .option])
+            Button("在终端中打开") { }
+                .keyboardShortcut("t", modifiers: [.command, .option])
             Button("移到废纸篓") { }
                 .keyboardShortcut(.delete, modifiers: .command)
             Button("在 Finder 中显示") { }
