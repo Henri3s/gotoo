@@ -1,59 +1,34 @@
-//
-//  ContentView.swift
-//  gotoo
-//
-//  Created by Henri on 2026/5/10.
-//
-
 import SwiftUI
-import SwiftData
 
-struct ContentView: View {
-    @Environment(\.modelContext) private var modelContext
-    @Query private var items: [Item]
-
+struct MainWindow: View {
+    @Environment(AppState.self) private var appState
+    
     var body: some View {
         NavigationSplitView {
-            List {
-                ForEach(items) { item in
-                    NavigationLink {
-                        Text("Item at \(item.timestamp, format: Date.FormatStyle(date: .numeric, time: .standard))")
-                    } label: {
-                        Text(item.timestamp, format: Date.FormatStyle(date: .numeric, time: .standard))
-                    }
-                }
-                .onDelete(perform: deleteItems)
-            }
-            .navigationSplitViewColumnWidth(min: 180, ideal: 200)
-            .toolbar {
-                ToolbarItem {
-                    Button(action: addItem) {
-                        Label("Add Item", systemImage: "plus")
-                    }
-                }
-            }
+            SidebarView()
+                .navigationSplitViewColumnWidth(min: 160, ideal: 200)
         } detail: {
-            Text("Select an item")
-        }
-    }
-
-    private func addItem() {
-        withAnimation {
-            let newItem = Item(timestamp: Date())
-            modelContext.insert(newItem)
-        }
-    }
-
-    private func deleteItems(offsets: IndexSet) {
-        withAnimation {
-            for index in offsets {
-                modelContext.delete(items[index])
+            ZStack {
+                BrowserView()
+                
+                // AI Panel overlay (右侧)
+                if appState.showAIPanel {
+                    HStack(spacing: 0) {
+                        Spacer()
+                        AIPanelView()
+                            .frame(width: 350)
+                            .background(.background)
+                    }
+                }
             }
         }
+        .navigationTitle(appState.currentDirectory.lastPathComponent)
+        .sheet(isPresented: Binding(
+            get: { appState.showRulesPanel },
+            set: { appState.showRulesPanel = $0 }
+        )) {
+            RulesView()
+                .frame(minWidth: 600, minHeight: 500)
+        }
     }
-}
-
-#Preview {
-    ContentView()
-        .modelContainer(for: Item.self, inMemory: true)
 }
