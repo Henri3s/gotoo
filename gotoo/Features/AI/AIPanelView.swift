@@ -12,178 +12,169 @@ struct AIPanelView: View {
     
     var body: some View {
         VStack(spacing: 0) {
-            // Header
-            HStack {
-                Image(systemName: "sparkles")
-                Text("AI 助手")
-                    .font(.headline)
-                Spacer()
-                if isLoading {
-                    ProgressView().scaleEffect(0.7)
-                }
-            }
-            .padding()
-            
-            Divider()
-            
-            // Messages
+            // 对话消息
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 10) {
-                        // 欢迎提示
+                    LazyVStack(alignment: .leading, spacing: 12) {
                         if appState.aiMessages.isEmpty {
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("我可以帮你整理文件。试试说：")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                                suggestionButton("帮我整理下载文件夹")
-                                suggestionButton("把所有 PDF 移到文档文件夹")
-                                suggestionButton("删除超过 30 天的旧文件")
-                                suggestionButton("这个文件夹里有什么大文件？")
-                            }
-                            .padding()
+                            suggestions
                         }
-                        
                         ForEach(appState.aiMessages) { msg in
-                            MessageBubble(message: msg)
-                                .id(msg.id)
+                            MessageBubble(message: msg).id(msg.id)
                         }
                     }
                     .padding()
                 }
                 .onChange(of: appState.aiMessages.count) { _, _ in
                     if let last = appState.aiMessages.last {
-                        withAnimation { proxy.scrollTo(last.id) }
+                        withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
                     }
                 }
             }
             
-            // Pending plan confirmation
+            // 待确认的操作计划
             if let plan = pendingPlan {
-                planConfirmation(plan)
+                planCard(plan)
             }
             
-            // Execution results
+            // 执行结果
             if let results = executionResults {
-                resultsView(results)
+                resultsCard(results)
             }
             
             Divider()
             
-            // Input
+            // 输入区
             HStack(spacing: 8) {
-                TextField("输入指令...", text: $inputText)
+                TextField("描述你想要的文件操作...", text: $inputText)
                     .textFieldStyle(.roundedBorder)
                     .onSubmit { sendMessage() }
                 
-                Button(action: sendMessage) {
-                    Image(systemName: "arrow.up.circle.fill")
+                Button {
+                    sendMessage()
+                } label: {
+                    Image(systemName: isLoading ? "hourglass" : "arrow.up.circle.fill")
                         .font(.title2)
                 }
                 .disabled(inputText.isEmpty || isLoading)
+                .buttonStyle(.borderless)
             }
-            .padding()
+            .padding(12)
         }
         .frame(minWidth: 300, minHeight: 400)
-        .background(.background)
     }
     
-    // MARK: - Suggestion Buttons
+    // MARK: - Suggestions
     
-    private func suggestionButton(_ text: String) -> some View {
+    private var suggestions: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("AI 文件助手", systemImage: "sparkles")
+                .font(.headline)
+            Text("用自然语言描述你想要的文件操作，我会帮你整理。")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            
+            VStack(alignment: .leading, spacing: 6) {
+                suggestionChip("整理下载文件夹中的文件")
+                suggestionChip("把所有图片移到图片文件夹")
+                suggestionChip("删除超过 30 天的旧文件")
+                suggestionChip("这个文件夹里有什么大文件？")
+            }
+        }
+        .padding()
+    }
+    
+    private func suggestionChip(_ text: String) -> some View {
         Button {
             inputText = text
             sendMessage()
         } label: {
-            HStack {
-                Image(systemName: "text.bubble")
-                    .font(.caption)
-                Text(text)
-                    .font(.caption)
+            HStack(spacing: 4) {
+                Image(systemName: "text.bubble").font(.caption2)
+                Text(text).font(.caption)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background(.tertiary, in: RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.plain)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.5), in: Capsule())
     }
     
-    // MARK: - Plan Confirmation
+    // MARK: - Plan Card
     
-    private func planConfirmation(_ plan: AIActionPlan) -> some View {
+    private func planCard(_ plan: AIActionPlan) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Image(systemName: "list.checklist")
-                Text("操作计划")
-                    .font(.subheadline.bold())
-                Spacer()
-            }
+            Label("操作计划", systemImage: "list.bullet.clipboard")
+                .font(.subheadline.bold())
             
             Text(plan.explanation)
                 .font(.caption)
                 .foregroundStyle(.secondary)
             
+            Divider()
+            
             ForEach(plan.operations) { op in
-                HStack(spacing: 4) {
-                    Image(systemName: actionIcon(op.action))
-                        .font(.caption2)
-                        .foregroundStyle(actionColor(op.action))
+                HStack(spacing: 6) {
+                    Image(systemName: iconForAction(op.action))
+                        .foregroundStyle(colorForAction(op.action))
+                        .frame(width: 14)
                     Text(op.displayText)
                         .font(.caption)
-                        .lineLimit(1)
+                        .lineLimit(2)
                 }
-                .padding(.vertical, 1)
             }
             
             HStack {
-                Button("执行") {
+                Button("确认执行") {
                     let results = aiEngine.execute(plan: plan, in: appState.paneManager.activePane.currentDirectory)
                     executionResults = results
                     pendingPlan = nil
-                    appState.aiMessages.append(AIMessage(role: .assistant, content: "已执行 \(results.filter { $0.hasPrefix("OK") }.count) 个操作"))
+                    let ok = results.filter { $0.hasPrefix("OK") }.count
+                    appState.aiMessages.append(AIMessage(role: .assistant, content: "已执行 \(ok)/\(results.count) 个操作"))
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
                 
-                Button("取消") {
-                    pendingPlan = nil
-                }
-                .controlSize(.small)
+                Button("取消") { pendingPlan = nil }
+                    .controlSize(.small)
             }
+            .padding(.top, 4)
         }
         .padding(12)
-        .background(.yellow.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
-        .padding(.horizontal)
+        .background(.yellow.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .strokeBorder(.yellow.opacity(0.3), lineWidth: 1)
+        )
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
     }
     
-    // MARK: - Results View
+    // MARK: - Results Card
     
-    private func resultsView(_ results: [String]) -> some View {
+    private func resultsCard(_ results: [String]) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("执行结果")
-                .font(.caption.bold())
-            ForEach(results, id: \.self) { result in
+            ForEach(results, id: \.self) { r in
                 HStack(spacing: 4) {
-                    Image(systemName: result.hasPrefix("OK") ? "checkmark.circle.fill" : "xmark.circle.fill")
-                        .foregroundStyle(result.hasPrefix("OK") ? .green : .red)
-                        .font(.caption2)
-                    Text(result).font(.caption2)
+                    Image(systemName: r.hasPrefix("OK") ? "checkmark.circle.fill" : "xmark.circle.fill")
+                        .foregroundStyle(r.hasPrefix("OK") ? .green : .red)
+                    Text(r).font(.caption)
                 }
             }
         }
         .padding(10)
-        .background(.green.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
-        .padding(.horizontal)
+        .background(.green.opacity(0.05), in: RoundedRectangle(cornerRadius: 6))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 4)
     }
     
     // MARK: - Actions
     
     private func sendMessage() {
         guard !inputText.isEmpty else { return }
-        
         let apiKey = appState.llmAPIKey
         guard !apiKey.isEmpty else {
-            appState.aiMessages.append(AIMessage(role: .error, content: "请先在设置中配置 API Key"))
+            appState.aiMessages.append(AIMessage(role: .error, content: "请先在「设置 → AI 模型」中配置 API Key"))
             return
         }
         
@@ -191,104 +182,58 @@ struct AIPanelView: View {
         inputText = ""
         pendingPlan = nil
         executionResults = nil
-        
         appState.aiMessages.append(AIMessage(role: .user, content: text))
         isLoading = true
         
-        let dir = appState.paneManager.activePane.currentDirectory
-        
         var context = ""
-        if let files = try? fileEngine.contents(of: dir) {
-            context = files.map { f in
-                "\(f.name)\(f.isDirectory ? "/" : "") \(f.isDirectory ? "" : f.formattedSize)"
-            }.joined(separator: "\n")
+        if let files = try? fileEngine.contents(of: appState.paneManager.activePane.currentDirectory) {
+            context = files.map { "\($0.name)\($0.isDirectory ? "/" : "") \($0.isDirectory ? "" : $0.formattedSize)" }.joined(separator: "\n")
         }
         
         Task {
             do {
-                let result = try await aiEngine.chat(
-                    message: text,
-                    context: context,
-                    baseURL: appState.llmBaseURL,
-                    apiKey: apiKey,
-                    model: appState.llmModel
-                )
-                
-                // Try to parse as action plan
+                let result = try await aiEngine.chat(message: text, context: context, baseURL: appState.llmBaseURL, apiKey: apiKey, model: appState.llmModel)
                 if let plan = aiEngine.parseActionPlan(from: result) {
                     pendingPlan = plan
                     appState.aiMessages.append(AIMessage(role: .assistant, content: plan.explanation))
                 } else {
-                    // Regular text response
                     appState.aiMessages.append(AIMessage(role: .assistant, content: result))
                 }
             } catch {
-                appState.aiMessages.append(AIMessage(role: .error, content: "错误: \(error.localizedDescription)"))
+                appState.aiMessages.append(AIMessage(role: .error, content: error.localizedDescription))
             }
             isLoading = false
         }
     }
     
-    // MARK: - Helpers
-    
-    private func actionIcon(_ action: AIActionPlan.FileOperation.ActionKind) -> String {
-        switch action {
-        case .move: return "arrow.right"
-        case .copy: return "doc.on.doc"
-        case .rename: return "pencil"
-        case .trash: return "trash"
-        case .createFolder: return "folder.badge.plus"
-        }
+    private func iconForAction(_ a: AIActionPlan.FileOperation.ActionKind) -> String {
+        switch a { case .move: "arrow.right"; case .copy: "doc.on.doc"; case .rename: "pencil"; case .trash: "trash"; case .createFolder: "folder.badge.plus" }
     }
-    
-    private func actionColor(_ action: AIActionPlan.FileOperation.ActionKind) -> Color {
-        switch action {
-        case .move: return .blue
-        case .copy: return .cyan
-        case .rename: return .orange
-        case .trash: return .red
-        case .createFolder: return .green
-        }
+    private func colorForAction(_ a: AIActionPlan.FileOperation.ActionKind) -> Color {
+        switch a { case .move: .blue; case .copy: .cyan; case .rename: .orange; case .trash: .red; case .createFolder: .green }
     }
 }
 
-// MARK: - Message Bubble
+// MARK: - Message Bubble (HIG: clean, minimal)
 
 struct MessageBubble: View {
     let message: AIMessage
     
-    var bgColor: Color {
+    private var bg: Color {
         switch message.role {
-        case .user: return Color.accentColor.opacity(0.12)
-        case .assistant: return Color.gray.opacity(0.08)
-        case .system: return Color.blue.opacity(0.08)
-        case .error: return Color.red.opacity(0.08)
-        }
-    }
-    
-    var icon: String {
-        switch message.role {
-        case .user: return "person"
-        case .assistant: return "sparkles"
-        case .system: return "info.circle"
-        case .error: return "exclamationmark.triangle"
+        case .user: .accentColor.opacity(0.1)
+        case .assistant: Color(nsColor: .controlBackgroundColor).opacity(0.5)
+        case .system: .blue.opacity(0.08)
+        case .error: .red.opacity(0.08)
         }
     }
     
     var body: some View {
-        HStack(alignment: .top, spacing: 6) {
-            Image(systemName: icon)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .frame(width: 16)
-            
-            Text(message.content)
-                .font(.body)
-                .textSelection(.enabled)
-            
-            Spacer(minLength: 0)
-        }
-        .padding(10)
-        .background(bgColor, in: RoundedRectangle(cornerRadius: 10))
+        Text(message.content)
+            .font(.body)
+            .textSelection(.enabled)
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
+            .background(bg, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 }

@@ -4,14 +4,14 @@ import SwiftData
 struct RulesView: View {
     @Environment(AppState.self) private var appState
     @Environment(\.modelContext) private var modelContext
-    @Query private var rules: [FileRule]
+    @Query(sort: \FileRule.name) private var rules: [FileRule]
     @State private var selectedRule: FileRule?
     @State private var showingEditor = false
-    @State private var showLog = false
+    @State private var selectedTab = 0  // 0 = rules, 1 = log
     
     var body: some View {
         VStack(spacing: 0) {
-            // Header
+            // 标题栏
             HStack {
                 Text("自动化规则")
                     .font(.headline)
@@ -19,21 +19,27 @@ struct RulesView: View {
                 Spacer()
                 
                 // 监控开关
-                Toggle(isOn: Binding(
-                    get: { appState.isMonitoringEnabled },
-                    set: { _ in appState.toggleMonitoring(rules: rules) }
-                )) {
+                Button {
+                    appState.toggleMonitoring(rules: rules)
+                } label: {
                     Label(
-                        appState.isMonitoringEnabled ? "监控中" : "已暂停",
+                        appState.isMonitoringEnabled ? "监控中" : "未启动",
                         systemImage: appState.isMonitoringEnabled ? "pause.circle.fill" : "play.circle"
                     )
                     .font(.caption)
                 }
-                .toggleStyle(.button)
+                .tint(appState.isMonitoringEnabled ? .green : nil)
                 
-                Button { showLog.toggle() } label: {
-                    Image(systemName: "list.bullet")
+                Divider().frame(height: 16)
+                
+                Picker("", selection: $selectedTab) {
+                    Text("规则").tag(0)
+                    Text("日志").tag(1)
                 }
+                .pickerStyle(.segmented)
+                .frame(width: 140)
+                
+                Divider().frame(height: 16)
                 
                 Button(action: addRule) {
                     Image(systemName: "plus")
@@ -43,15 +49,40 @@ struct RulesView: View {
             
             Divider()
             
-            if showLog {
-                MonitorLogView(log: appState.ruleMonitor.executionLog)
-            } else if rules.isEmpty {
-                ContentUnavailableView("暂无规则", systemImage: "gearshape", description: Text("点击 + 添加自动化规则"))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // 内容
+            Group {
+                if selectedTab == 0 {
+                    rulesList
+                } else {
+                    MonitorLogView(log: appState.ruleMonitor.executionLog)
+                }
+            }
+        }
+        .frame(minWidth: 500, minHeight: 450)
+        .sheet(isPresented: $showingEditor) {
+            if let rule = selectedRule {
+                RuleEditorView(rule: rule)
+            }
+        }
+    }
+    
+    // MARK: - Rules List
+    
+    private var rulesList: some View {
+        Group {
+            if rules.isEmpty {
+                ContentUnavailableView {
+                    Label("暂无规则", systemImage: "gearshape")
+                } description: {
+                    Text("点击 + 添加自动化规则")
+                } actions: {
+                    Button("添加规则") { addRule() }
+                        .buttonStyle(.borderedProminent)
+                }
             } else {
                 List(selection: $selectedRule) {
                     ForEach(rules) { rule in
-                        RuleRow(rule: rule)
+                        ruleRow(rule)
                             .tag(rule)
                             .contextMenu {
                                 Button("立即执行") {
@@ -64,15 +95,44 @@ struct RulesView: View {
                             }
                     }
                 }
-                .listStyle(.sidebar)
+                .listStyle(.inset(alternatesRowBackgrounds: true))
             }
         }
-        .frame(minWidth: 500, minHeight: 450)
-        .sheet(isPresented: $showingEditor) {
-            if let rule = selectedRule {
-                RuleEditorView(rule: rule)
+    }
+    
+    private func ruleRow(_ rule: FileRule) -> some View {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(rule.name)
+                    .font(.body)
+                Text(rule.watchPath)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                
+                // 条件标签
+                let conds = rule.conditions
+                if !conds.isEmpty {
+                    HStack(spacing: 4) {
+                        ForEach(conds.indices, id: \.self) { i in
+                            Text(conds[i].kind.rawValue)
+                                .font(.caption2)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 1)
+                                .background(.fill.tertiary, in: Capsule())
+                        }
+                    }
+                }
             }
+            
+            Spacer()
+            
+            // 状态指示
+            Circle()
+                .fill(rule.isEnabled ? Color.green : Color.gray)
+                .frame(width: 8, height: 8)
         }
+        .padding(.vertical, 3)
     }
     
     private func addRule() {
@@ -83,43 +143,15 @@ struct RulesView: View {
     }
 }
 
-struct RuleRow: View {
-    let rule: FileRule
-    
-    var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(rule.name).font(.body)
-                Text(rule.watchPath)
-                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                if !rule.conditions.isEmpty {
-                    HStack(spacing: 4) {
-                        ForEach(rule.conditions.indices, id: \.self) { i in
-                            Text(rule.conditions[i].kind.rawValue)
-                                .font(.caption2)
-                                .padding(.horizontal, 4)
-                                .padding(.vertical, 1)
-                                .background(.tertiary, in: Capsule())
-                        }
-                    }
-                }
-            }
-            Spacer()
-            Circle()
-                .fill(rule.isEnabled ? Color.green : Color.gray)
-                .frame(width: 8, height: 8)
-        }
-        .padding(.vertical, 4)
-    }
-}
+// MARK: - Rule Editor
 
 struct RuleEditorView: View {
     @Bindable var rule: FileRule
     @Environment(\.dismiss) private var dismiss
-    @State private var newConditionKind: RuleCondition.Kind = .extensionMatch
-    @State private var newConditionValue = ""
-    @State private var newActionKind: RuleAction.Kind = .moveTo
-    @State private var newActionParam = ""
+    @State private var newCondKind: RuleCondition.Kind = .extensionMatch
+    @State private var newCondValue = ""
+    @State private var newActKind: RuleAction.Kind = .moveTo
+    @State private var newActParam = ""
     
     var body: some View {
         VStack(spacing: 16) {
@@ -130,7 +162,7 @@ struct RuleEditorView: View {
                 
                 HStack {
                     TextField("监控路径", text: $rule.watchPath)
-                    Button("选择") {
+                    Button("选择...") {
                         let panel = NSOpenPanel()
                         panel.canChooseDirectories = true
                         panel.canChooseFiles = false
@@ -145,30 +177,27 @@ struct RuleEditorView: View {
                 Section("条件") {
                     ForEach(rule.conditions.indices, id: \.self) { i in
                         HStack {
-                            Text(rule.conditions[i].kind.rawValue)
+                            Label(rule.conditions[i].kind.rawValue, systemImage: "line.3.horizontal.decrease")
                                 .font(.caption)
                             Text(rule.conditions[i].value)
                                 .font(.caption).foregroundStyle(.secondary)
                             Spacer()
-                            Button(role: .destructive) {
-                                rule.conditions.remove(at: i)
-                            } label: {
+                            Button(role: .destructive) { rule.conditions.remove(at: i) } label: {
                                 Image(systemName: "minus.circle").font(.caption)
                             }
                         }
                     }
                     
                     HStack {
-                        Picker("类型", selection: $newConditionKind) {
+                        Picker("", selection: $newCondKind) {
                             ForEach(RuleCondition.Kind.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                         }
-                        TextField("值", text: $newConditionValue)
+                        .frame(width: 140)
+                        TextField("值", text: $newCondValue)
                         Button("添加") {
-                            guard !newConditionValue.isEmpty else { return }
-                            var conditions = rule.conditions
-                            conditions.append(RuleCondition(kind: newConditionKind, value: newConditionValue))
-                            rule.conditions = conditions
-                            newConditionValue = ""
+                            guard !newCondValue.isEmpty else { return }
+                            var c = rule.conditions; c.append(.init(kind: newCondKind, value: newCondValue))
+                            rule.conditions = c; newCondValue = ""
                         }
                     }
                 }
@@ -176,42 +205,37 @@ struct RuleEditorView: View {
                 Section("动作") {
                     ForEach(rule.actions.indices, id: \.self) { i in
                         HStack {
-                            Text(rule.actions[i].kind.rawValue).font(.caption)
-                            Text(rule.actions[i].parameter).font(.caption).foregroundStyle(.secondary)
+                            Label(rule.actions[i].kind.rawValue, systemImage: "bolt")
+                                .font(.caption)
+                            Text(rule.actions[i].parameter)
+                                .font(.caption).foregroundStyle(.secondary)
                             Spacer()
-                            Button(role: .destructive) {
-                                rule.actions.remove(at: i)
-                            } label: {
+                            Button(role: .destructive) { rule.actions.remove(at: i) } label: {
                                 Image(systemName: "minus.circle").font(.caption)
                             }
                         }
                     }
                     
                     HStack {
-                        Picker("类型", selection: $newActionKind) {
+                        Picker("", selection: $newActKind) {
                             ForEach(RuleAction.Kind.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                         }
-                        if newActionKind == .moveTo || newActionKind == .copyTo {
+                        .frame(width: 100)
+                        if newActKind == .moveTo || newActKind == .copyTo {
                             HStack {
-                                TextField("目标路径", text: $newActionParam)
-                                Button("选择") {
-                                    let panel = NSOpenPanel()
-                                    panel.canChooseDirectories = true
-                                    panel.canChooseFiles = false
-                                    if panel.runModal() == .OK, let url = panel.url {
-                                        newActionParam = url.path
-                                    }
+                                TextField("目标", text: $newActParam)
+                                Button("...") {
+                                    let p = NSOpenPanel(); p.canChooseDirectories = true; p.canChooseFiles = false
+                                    if p.runModal() == .OK, let u = p.url { newActParam = u.path }
                                 }
                             }
                         } else {
-                            TextField("参数", text: $newActionParam)
+                            TextField("参数", text: $newActParam)
                         }
                         Button("添加") {
-                            guard !newActionParam.isEmpty else { return }
-                            var actions = rule.actions
-                            actions.append(RuleAction(kind: newActionKind, parameter: newActionParam))
-                            rule.actions = actions
-                            newActionParam = ""
+                            guard !newActParam.isEmpty else { return }
+                            var a = rule.actions; a.append(.init(kind: newActKind, parameter: newActParam))
+                            rule.actions = a; newActParam = ""
                         }
                     }
                 }

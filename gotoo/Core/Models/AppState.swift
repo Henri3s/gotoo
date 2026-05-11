@@ -8,7 +8,7 @@ final class AppState {
     var showAIPanel = false
     var showRulesPanel = false
     
-    // LLM Config
+    // LLM
     var llmBaseURL: String = "https://api.siliconflow.cn/v1"
     var llmAPIKey: String = ""
     var llmModel: String = "deepseek-ai/DeepSeek-V4-Flash"
@@ -19,7 +19,7 @@ final class AppState {
     var aiMessages: [AIMessage] = []
     
     // 自定义收藏夹
-    var customFavorites: [(String, URL)] = []
+    var customFavorites: [(name: String, url: URL)] = []
     
     // 规则监控
     var ruleMonitor = RuleMonitor()

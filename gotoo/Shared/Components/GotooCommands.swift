@@ -1,6 +1,5 @@
 import SwiftUI
 
-/// Commands 不能持有 @Environment，用 @FocusedValue 代替
 struct GotooAppKey: FocusedValueKey {
     typealias Value = AppState
 }
@@ -18,23 +17,10 @@ struct GotooCommands: Commands {
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
             Button("新建文件夹") {
-                appState?.paneManager.activePane.navigateTo(appState?.paneManager.activePane.currentDirectory ?? .homeDirectory)
-                let _ = try? FileEngine().createFolder(
-                    at: appState?.paneManager.activePane.currentDirectory ?? FileManager.default.homeDirectoryForCurrentUser,
-                    name: "未命名文件夹"
-                )
+                let dir = appState?.paneManager.activePane.currentDirectory ?? FileManager.default.homeDirectoryForCurrentUser
+                let _ = try? FileEngine().createFolder(at: dir, name: "未命名文件夹")
             }
             .keyboardShortcut("n", modifiers: [.command, .shift])
-            
-            Button("新建标签页") {
-                appState?.paneManager.activePane.addTab(directory: appState?.paneManager.activePane.currentDirectory ?? .homeDirectory)
-            }
-            .keyboardShortcut("t")
-            
-            Button("关闭标签页") {
-                appState?.paneManager.activePane.closeTab(id: appState?.paneManager.activePane.activeTabId ?? UUID())
-            }
-            .keyboardShortcut("w")
         }
         
         CommandMenu("面板") {
@@ -54,10 +40,10 @@ struct GotooCommands: Commands {
         }
         
         CommandMenu("视图") {
-            Button("切换侧边栏") { }
-                .keyboardShortcut("s", modifiers: [.command, .shift])
-            Button("切换预览面板") { }
-                .keyboardShortcut("p", modifiers: [.command, .shift])
+            Button("切换侧边栏") {
+                // NavigationSplitView handles this natively
+            }
+            .keyboardShortcut("s", modifiers: [.command])
         }
         
         CommandMenu("AI") {

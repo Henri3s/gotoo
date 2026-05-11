@@ -20,8 +20,6 @@ struct GotooApp: App {
             MainWindow()
                 .environment(appState)
         }
-        .windowStyle(.titleBar)
-        .windowToolbarStyle(.unified(showsTitle: true))
         .defaultSize(width: 1200, height: 800)
         .commands {
             GotooCommands()
@@ -32,7 +30,6 @@ struct GotooApp: App {
                 .environment(appState)
         }
         
-        // 系统托盘
         MenuBarExtra("Gotoo", systemImage: appState.isMonitoringEnabled ? "folder.badge.gearshape" : "folder") {
             MenuBarExtraContent()
                 .environment(appState)
@@ -73,13 +70,9 @@ struct MenuBarExtraContent: View {
         
         Button("打开 Gotoo") {
             NSApp.activate(ignoringOtherApps: true)
-            if let window = NSApp.windows.first(where: { $0.isVisible }) {
-                window.makeKeyAndOrderFront(nil)
-            }
+            if let w = NSApp.windows.first(where: { $0.isVisible }) { w.makeKeyAndOrderFront(nil) }
         }
         
-        Button("退出") {
-            NSApp.terminate(nil)
-        }
+        Button("退出 Gotoo") { NSApp.terminate(nil) }
     }
 }
