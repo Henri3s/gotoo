@@ -30,6 +30,7 @@ struct MainWindow: View {
             }
         }
         .navigationTitle("Gotoo")
+        .focusedValue(\.appState, appState)
         .sheet(isPresented: Binding(get: { appState.showRulesPanel }, set: { appState.showRulesPanel = $0 })) {
             RulesView().frame(minWidth: 600, minHeight: 500)
         }

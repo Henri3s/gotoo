@@ -1,42 +1,55 @@
 import SwiftUI
 
+/// Commands 不能持有 @Environment，用 @FocusedValue 代替
+struct GotooAppKey: FocusedValueKey {
+    typealias Value = AppState
+}
+
+extension FocusedValues {
+    var appState: GotooAppKey.Value? {
+        get { self[GotooAppKey.self] }
+        set { self[GotooAppKey.self] = newValue }
+    }
+}
+
 struct GotooCommands: Commands {
-    @Environment(AppState.self) private var appState
+    @FocusedValue(\.appState) private var appState
     
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
             Button("新建文件夹") {
+                appState?.paneManager.activePane.navigateTo(appState?.paneManager.activePane.currentDirectory ?? .homeDirectory)
                 let _ = try? FileEngine().createFolder(
-                    at: appState.paneManager.activePane.currentDirectory,
+                    at: appState?.paneManager.activePane.currentDirectory ?? FileManager.default.homeDirectoryForCurrentUser,
                     name: "未命名文件夹"
                 )
             }
             .keyboardShortcut("n", modifiers: [.command, .shift])
             
             Button("新建标签页") {
-                appState.paneManager.activePane.addTab(directory: appState.paneManager.activePane.currentDirectory)
+                appState?.paneManager.activePane.addTab(directory: appState?.paneManager.activePane.currentDirectory ?? .homeDirectory)
             }
             .keyboardShortcut("t")
             
             Button("关闭标签页") {
-                appState.paneManager.activePane.closeTab(id: appState.paneManager.activePane.activeTabId)
+                appState?.paneManager.activePane.closeTab(id: appState?.paneManager.activePane.activeTabId ?? UUID())
             }
             .keyboardShortcut("w")
         }
         
         CommandMenu("面板") {
             Button("切换到下一个面板") {
-                appState.paneManager.nextPane()
+                appState?.paneManager.nextPane()
             }
             .keyboardShortcut("u")
             
             Divider()
             
-            Button("单栏布局") { appState.paneManager.setLayout(.single) }
+            Button("单栏布局") { appState?.paneManager.setLayout(.single) }
                 .keyboardShortcut("1", modifiers: [.command, .shift])
-            Button("双栏布局") { appState.paneManager.setLayout(.dual) }
+            Button("双栏布局") { appState?.paneManager.setLayout(.dual) }
                 .keyboardShortcut("2", modifiers: [.command, .shift])
-            Button("三栏布局") { appState.paneManager.setLayout(.triple) }
+            Button("三栏布局") { appState?.paneManager.setLayout(.triple) }
                 .keyboardShortcut("3", modifiers: [.command, .shift])
         }
         
@@ -49,7 +62,7 @@ struct GotooCommands: Commands {
         
         CommandMenu("AI") {
             Button("打开 AI 面板") {
-                appState.showAIPanel.toggle()
+                appState?.showAIPanel.toggle()
             }
             .keyboardShortcut("i", modifiers: [.command, .shift])
         }
