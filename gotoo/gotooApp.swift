@@ -7,7 +7,7 @@ struct GotooApp: App {
     /// Commands 等非 View 组件通过 AppState.shared 访问
     @State private var appState = AppState.shared
     
-    var sharedModelContainer: ModelContainer = {
+    static let sharedModelContainer: ModelContainer = {
         let schema = Schema([FileRule.self, FileSkill.self, FolderConfig.self])
         let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
         do {
@@ -18,6 +18,8 @@ struct GotooApp: App {
             return try! ModelContainer(for: schema, configurations: [fallbackConfig])
         }
     }()
+    
+    var sharedModelContainer: ModelContainer { Self.sharedModelContainer }
     
     var body: some Scene {
         WindowGroup {

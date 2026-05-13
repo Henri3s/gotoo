@@ -2,6 +2,27 @@
 
 ---
 
+## v1.0.0-beta — 2026-05-14
+
+### 首个 Beta 发布
+
+**App Intents 实现**:
+- 执行所有规则 (RunAllRulesIntent) — 从 Spotlight/快捷指令触发
+- 切换 AI 面板 (ToggleAIPanelIntent)
+- 整理下载文件夹 (OrganizeDownloadsIntent) — 按类型自动归类
+- GotooShortcuts 注册三个快捷指令，支持中英双语触发
+
+**代码清理**:
+- 删除死代码 LLMSettings.swift（从未被引用）
+- ModelContainer 改为 static + instance computed property，支持 Intents 访问
+
+### 构建状态
+
+BUILD SUCCEEDED (macOS, arm64, Debug + Release) — **0 errors**
+**运行验证**: 应用正常启动
+
+---
+
 ## v0.12.0 — 2026-05-14
 
 ### AI 对话 + 收藏夹持久化
