@@ -3,6 +3,7 @@ import SwiftUI
 /// 原生 Sidebar — 使用 List + Section，HIG 标准 sidebar 样式
 struct SidebarView: View {
     @Environment(AppState.self) private var appState
+    @State private var showFavoritesManager = false
     
     private let defaultFavorites: [(name: String, url: URL)] = {
         let home = FileManager.default.homeDirectoryForCurrentUser
@@ -39,6 +40,11 @@ struct SidebarView: View {
                             Label(item.name, systemImage: "folder.fill")
                         }
                         .buttonStyle(.plain)
+                        .contextMenu {
+                            Button("移除", role: .destructive) {
+                                appState.customFavorites.removeAll { $0.name == item.name }
+                            }
+                        }
                     }
                 }
             }
@@ -64,9 +70,23 @@ struct SidebarView: View {
                     Label("规则模板", systemImage: "square.grid.2x2")
                 }
                 .buttonStyle(.plain)
+                
+                Divider()
+                
+                Button {
+                    showFavoritesManager = true
+                } label: {
+                    Label("管理收藏夹", systemImage: "star.circle")
+                }
+                .buttonStyle(.plain)
             }
         }
         .listStyle(.sidebar)
+        .sheet(isPresented: $showFavoritesManager) {
+            FavoritesManagerView()
+                .environment(appState)
+                .frame(width: 450, height: 400)
+        }
     }
     
     private func iconForFavorite(_ name: String) -> String {

@@ -301,13 +301,19 @@ struct AIPanelView: View {
                     baseURL: appState.llmBaseURL,
                     apiKey: apiKey,
                     model: appState.llmModel,
-                    systemPromptOverride: folderPrompt
+                    systemPromptOverride: folderPrompt,
+                    conversationHistory: appState.conversationHistory
                 )
+                // 记录到对话历史
+                appState.conversationHistory.append((role: "user", content: userMessage))
+                
                 if let plan = aiEngine.parseActionPlan(from: result) {
                     pendingPlan = plan
                     appState.aiMessages.append(AIMessage(role: .assistant, content: plan.explanation))
+                    appState.conversationHistory.append((role: "assistant", content: plan.explanation))
                 } else {
                     appState.aiMessages.append(AIMessage(role: .assistant, content: result))
+                    appState.conversationHistory.append((role: "assistant", content: result))
                 }
             } catch {
                 appState.aiMessages.append(AIMessage(role: .error, content: error.localizedDescription))

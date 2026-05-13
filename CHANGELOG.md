@@ -2,6 +2,28 @@
 
 ---
 
+## v0.12.0 — 2026-05-14
+
+### AI 对话 + 收藏夹持久化
+
+**AI 对话历史**:
+- 每次对话自动记录到 `appState.conversationHistory`
+- AI 请求发送完整历史上下文，多轮对话不再失忆
+- 用户消息和 AI 回复都加入历史
+
+**收藏夹持久化**:
+- `customFavorites` 存储到 UserDefaults，应用重启不丢失
+- AppState.init() 自动恢复保存的收藏夹
+- 自定义收藏夹右键菜单支持移除
+- SidebarView 工具区新增「管理收藏夹」入口
+- FavoritesManagerView 通过 sheet 呈现
+
+### 构建状态
+
+BUILD SUCCEEDED (macOS, arm64, Debug) — **0 errors**
+
+---
+
 ## v0.11.0 — 2026-05-14
 
 ### 文件浏览器核心体验升级

@@ -43,8 +43,14 @@ final class AppState: @unchecked Sendable {
     }
     var conversationHistory: [(role: String, content: String)] = []
     
-    // MARK: - Favorites
-    var customFavorites: [(name: String, url: URL)] = []
+    // MARK: - Favorites (持久化到 UserDefaults)
+    var customFavorites: [(name: String, url: URL)] {
+        didSet {
+            // 持久化：编码为 [[String: String]] 格式
+            let data = customFavorites.map { ["name": $0.name, "path": $0.url.path] }
+            UserDefaults.standard.set(data, forKey: "custom_favorites")
+        }
+    }
     
     // MARK: - Rules
     var ruleMonitor = RuleMonitor()
@@ -76,12 +82,21 @@ final class AppState: @unchecked Sendable {
         if let key = KeychainStore.load(key: "llm_api_key") {
             self.llmAPIKey = key
         } else if let legacy = UserDefaults.standard.string(forKey: "llm_api_key") {
-            // 迁移旧数据到 Keychain，清除 UserDefaults
             self.llmAPIKey = legacy
             KeychainStore.save(key: "llm_api_key", value: legacy)
             UserDefaults.standard.removeObject(forKey: "llm_api_key")
         } else {
             self.llmAPIKey = ""
+        }
+        
+        // 恢复收藏夹
+        if let data = UserDefaults.standard.array(forKey: "custom_favorites") as? [[String: String]] {
+            self.customFavorites = data.compactMap { item in
+                guard let name = item["name"], let path = item["path"] else { return nil }
+                return (name: name, url: URL(fileURLWithPath: path))
+            }
+        } else {
+            self.customFavorites = []
         }
     }
     
