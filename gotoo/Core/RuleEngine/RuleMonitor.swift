@@ -8,10 +8,14 @@ import UserNotifications
 final class RuleMonitor {
     private var timer: Timer?
     private var fileSources: [URL: DispatchSourceFileSystemObject] = [:]
+    private var debounceTask: Task<Void, Never>?
     var executionLog: [ExecutionEntry] = []
     var pendingConfirmations: [PendingExecution] = []
     
     private let ruleEngine = RuleEngine()
+    private let fileEngine = FileEngine()
+    /// 当前活跃的规则引用
+    private var activeRules: [FileRule] = []
     
     // MARK: - Types
     
@@ -36,13 +40,14 @@ final class RuleMonitor {
     
     func startMonitoring(rules: [FileRule]) {
         stopMonitoring()
+        activeRules = rules.filter { $0.isEnabled }
         
-        for rule in rules where rule.isEnabled {
+        for rule in activeRules {
             let url = URL(fileURLWithPath: rule.watchPath)
             startFileWatch(url)
         }
         
-        startScheduleTimer(rules: rules)
+        startScheduleTimer(rules: activeRules)
     }
     
     func stopMonitoring() {
@@ -50,6 +55,9 @@ final class RuleMonitor {
         timer = nil
         for source in fileSources.values { source.cancel() }
         fileSources.removeAll()
+        debounceTask?.cancel()
+        debounceTask = nil
+        activeRules = []
     }
     
     /// 手动执行所有规则一次
@@ -73,9 +81,11 @@ final class RuleMonitor {
             queue: .global(qos: .utility)
         )
         
+        // 捕获 URL 值（不是引用），安全用于跨线程
+        let watchedURL = url
         source.setEventHandler { [weak self] in
             Task { @MainActor [weak self] in
-                self?.handleFileChange(at: url)
+                self?.handleFileChange(at: watchedURL)
             }
         }
         
@@ -84,19 +94,58 @@ final class RuleMonitor {
         fileSources[url] = source
     }
     
+    /// 文件变化处理 — 1 秒防抖后执行匹配规则
     private func handleFileChange(at url: URL) {
-        // 通知 UI 有变更
-        // TODO: 查找匹配该路径的规则并执行
+        // 通知 UI 刷新文件列表
+        NotificationCenter.default.post(name: .fileSystemChanged, object: url)
+        
+        // 防抖：多次快速事件合并为一次执行
+        debounceTask?.cancel()
+        debounceTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled else { return }
+            executeMatchingRules(for: url)
+        }
+    }
+    
+    /// 查找并执行匹配该路径的规则
+    private func executeMatchingRules(for changedURL: URL) {
+        let matchingRules = activeRules.filter { rule in
+            guard rule.isEnabled else { return false }
+            let watchURL = URL(fileURLWithPath: rule.watchPath)
+            return changedURL.path.hasPrefix(watchURL.path)
+        }
+        
+        guard !matchingRules.isEmpty else { return }
+        
+        do {
+            let files = try fileEngine.contents(of: changedURL)
+            for rule in matchingRules {
+                for file in files {
+                    if rule.matches(file: file) {
+                        let actions = rule.actions
+                        switch rule.runMode {
+                        case "confirm":
+                            pendingConfirmations.append(PendingExecution(rule: rule, file: file, actions: actions))
+                        case "manual":
+                            break
+                        default: // "auto"
+                            executeActions(actions, for: rule, on: file)
+                        }
+                    }
+                }
+            }
+        } catch {
+            // 目录读取失败，静默忽略
+        }
     }
     
     // MARK: - Rule Execution
     
     func runRule(_ rule: FileRule, in directory: URL? = nil) {
         let dir = directory ?? URL(fileURLWithPath: rule.watchPath)
-        let ruleEngine = RuleEngine()
         
-        guard let _ = try? FileEngine().contents(of: dir),
-              let matched = try? ruleEngine.apply(rules: [rule], toDirectory: dir) else { return }
+        guard let matched = try? ruleEngine.apply(rules: [rule], toDirectory: dir) else { return }
         
         for (matchedRule, file) in matched {
             let actions = matchedRule.actions
@@ -142,6 +191,9 @@ final class RuleMonitor {
         if executionLog.count > 500 {
             executionLog = Array(executionLog.suffix(500))
         }
+        
+        // 通知 UI 文件系统已变更
+        NotificationCenter.default.post(name: .fileSystemChanged, object: file.url)
     }
     
     func confirmExecution(_ pending: PendingExecution) {
@@ -161,9 +213,7 @@ final class RuleMonitor {
         let scheduledRules = rules.filter { $0.schedule != nil }
         guard !scheduledRules.isEmpty else { return }
         
-        // 捕获规则引用（闭包中只用于检查 schedule）
         // FileRule 是 @Model (SwiftData)，在 @MainActor 上下文中使用是安全的
-        // non Sendable warning: FileRule 是 @Model，跨 actor 传递是安全的
         let capturedRules = scheduledRules
         timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in

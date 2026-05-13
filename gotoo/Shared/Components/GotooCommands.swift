@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// App 菜单命令
 /// 注意: Commands 不是 View，不能使用 @Environment
@@ -9,7 +10,16 @@ struct GotooCommands: Commands {
         // 文件菜单
         CommandGroup(after: .newItem) {
             Button("新建文件夹") {
-                // TODO: 在当前面板创建文件夹
+                let dir = AppState.shared.paneManager.activePane.currentDirectory
+                let fm = FileManager.default
+                var idx = 0
+                var name = "未命名文件夹"
+                while fm.fileExists(atPath: dir.appendingPathComponent(name).path) {
+                    idx += 1
+                    name = "未命名文件夹 \(idx)"
+                }
+                try? fm.createDirectory(at: dir.appendingPathComponent(name), withIntermediateDirectories: false)
+                NotificationCenter.default.post(name: .refreshCurrentPane, object: nil)
             }
             .keyboardShortcut("n", modifiers: [.command, .shift])
             
@@ -31,7 +41,14 @@ struct GotooCommands: Commands {
             Divider()
             
             Button("拷贝路径") {
-                // TODO: 拷贝选中文件路径
+                if let url = AppState.shared.paneManager.activePane.selectedFiles.first {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(url.path, forType: .string)
+                } else {
+                    let dir = AppState.shared.paneManager.activePane.currentDirectory
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(dir.path, forType: .string)
+                }
             }
             .keyboardShortcut("c", modifiers: [.command, .shift])
         }
@@ -55,7 +72,7 @@ struct GotooCommands: Commands {
             .keyboardShortcut("i", modifiers: [.command, .shift])
             
             Button("刷新") {
-                // 由 PaneView 内部处理
+                NotificationCenter.default.post(name: .refreshCurrentPane, object: nil)
             }
             .keyboardShortcut("r", modifiers: [.command])
             

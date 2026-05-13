@@ -14,6 +14,10 @@ struct MainWindow: View {
             detailContent
         }
         .navigationSplitViewStyle(.balanced)
+        .background {
+            // 全局通知监听器（不可见）
+            RunAllRulesObserver()
+        }
         .sheet(isPresented: Binding(
             get: { appState.showRulesPanel },
             set: { appState.showRulesPanel = $0 }
@@ -79,11 +83,12 @@ struct MainWindow: View {
                 .help("后退")
                 
                 Button {
-                    // 刷新由 PaneContentView 内部处理
+                    // 广播刷新通知 — PaneContentView 监听
+                    NotificationCenter.default.post(name: .refreshCurrentPane, object: nil)
                 } label: {
                     Label("刷新", systemImage: "arrow.clockwise")
                 }
-                .help("刷新")
+                .help("刷新当前目录")
             }
             
             ToolbarItemGroup(placement: .primaryAction) {

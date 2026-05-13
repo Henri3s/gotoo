@@ -97,3 +97,18 @@ struct MenuBarExtraContent: View {
         Button("退出 Gotoo") { NSApp.terminate(nil) }
     }
 }
+
+// MARK: - Global Notification Observer
+
+/// 监听 runAllRules 全局通知
+struct RunAllRulesObserver: View {
+    @Environment(AppState.self) private var appState
+    @Query private var rules: [FileRule]
+    
+    var body: some View {
+        EmptyView()
+            .onReceive(NotificationCenter.default.publisher(for: .runAllRules)) { _ in
+                appState.ruleMonitor.runAllOnce(rules: rules)
+            }
+    }
+}

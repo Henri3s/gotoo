@@ -126,10 +126,19 @@ final class AIEngine {
         apiKey: String,
         model: String,
         systemPromptOverride: String? = nil,
-        conversationHistory: [(role: String, content: String)] = []
+        conversationHistory: [(role: String, content: String)] = [],
+        temperature: Double? = nil,
+        maxTokens: Int? = nil
     ) async throws -> String {
         let systemPrompt = systemPromptOverride ?? buildSystemPrompt(context: context)
-        let url = URL(string: baseURL + "/chat/completions")!
+        guard let url = URL(string: baseURL + "/chat/completions") else {
+            throw AIError.apiError("无效的 API 地址: \(baseURL)")
+        }
+        
+        let storedTemp = UserDefaults.standard.double(forKey: "llm_temperature")
+        let temp = temperature ?? (storedTemp == 0.0 ? 0.3 : storedTemp)
+        let storedMaxTok = UserDefaults.standard.integer(forKey: "llm_max_tokens")
+        let maxTok = maxTokens ?? (storedMaxTok > 0 ? storedMaxTok : 4096)
         
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -152,8 +161,8 @@ final class AIEngine {
         let body = Request(
             model: model,
             messages: messages,
-            max_tokens: 4096,
-            temperature: 0.3,
+            max_tokens: maxTok,
+            temperature: temp,
             tools: Self.toolDefs,
             tool_choice: .init(type: "auto")
         )
@@ -185,21 +194,27 @@ final class AIEngine {
         model: String
     ) async throws -> String {
         let systemPrompt = buildSkillPrompt(skillContext: skillPrompt, fileContext: context)
-        let url = URL(string: baseURL + "/chat/completions")!
+        guard let url = URL(string: baseURL + "/chat/completions") else {
+            throw AIError.apiError("无效的 API 地址: \(baseURL)")
+        }
         
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         
+        let storedTemp = UserDefaults.standard.double(forKey: "llm_temperature")
+        let temp = storedTemp == 0.0 ? 0.3 : storedTemp
+        let storedMaxTok = UserDefaults.standard.integer(forKey: "llm_max_tokens")
+        let maxTok = storedMaxTok > 0 ? storedMaxTok : 4096
         let body = Request(
             model: model,
             messages: [
                 .init(role: "system", content: systemPrompt, tool_calls: nil, tool_call_id: nil),
                 .init(role: "user", content: message, tool_calls: nil, tool_call_id: nil),
             ],
-            max_tokens: 4096,
-            temperature: 0.3,
+            max_tokens: maxTok,
+            temperature: temp,
             tools: Self.toolDefs,
             tool_choice: .init(type: "auto")
         )

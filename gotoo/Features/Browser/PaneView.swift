@@ -1,16 +1,78 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// 单面板内容视图 — HIG 风格
+/// 单面板内容视图 — HIG 风格，支持双击导航、键盘操作
 struct PaneContentView: View {
     @Bindable var pane: PaneState
     let isActive: Bool
     let fileEngine = FileEngine()
     @State private var previewFile: FileItem?
+    @State private var searchQuery = ""
+    @State private var sortField: SortField = .name
+    @State private var sortAscending = true
+    
+    // 导航历史栈
+    @State private var backStack: [URL] = []
+    @State private var forwardStack: [URL] = []
+    
+    enum SortField: String, CaseIterable {
+        case name = "名称"
+        case size = "大小"
+        case date = "修改日期"
+        case kind = "类型"
+    }
+    
+    var filteredFiles: [FileItem] {
+        var result = pane.files
+        if !searchQuery.isEmpty {
+            result = result.filter { $0.name.localizedCaseInsensitiveContains(searchQuery) }
+        }
+        // 排序：文件夹始终在前
+        result.sort { (a: FileItem, b: FileItem) -> Bool in
+            if a.isDirectory != b.isDirectory { return a.isDirectory }
+            let asc = sortAscending
+            switch sortField {
+            case .name: return asc ? a.name.localizedStandardCompare(b.name) == .orderedAscending : a.name.localizedStandardCompare(b.name) == .orderedDescending
+            case .size: return asc ? a.size < b.size : a.size > b.size
+            case .date:
+                let ad = a.modificationDate ?? .distantPast
+                let bd = b.modificationDate ?? .distantPast
+                return asc ? ad < bd : ad > bd
+            case .kind: return asc ? a.fileExtension < b.fileExtension : a.fileExtension > b.fileExtension
+            }
+        }
+        return result
+    }
     
     var body: some View {
         VStack(spacing: 0) {
             pathBar
+            Divider()
+            
+            // 搜索栏
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                TextField("搜索文件...", text: $searchQuery)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 12))
+                if !searchQuery.isEmpty {
+                    Button {
+                        searchQuery = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+                sortMenu
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background(.bar)
+            
             Divider()
             
             HStack(spacing: 0) {
@@ -31,6 +93,42 @@ struct PaneContentView: View {
         )
         .onAppear { loadFiles() }
         .onChange(of: pane.currentDirectory) { _, _ in loadFiles() }
+        // 文件系统变化时自动刷新
+        .onReceive(NotificationCenter.default.publisher(for: .fileSystemChanged)) { notification in
+            if let changedURL = notification.object as? URL,
+               changedURL.path.hasPrefix(pane.currentDirectory.path) {
+                loadFiles()
+            }
+        }
+        // 手动刷新
+        .onReceive(NotificationCenter.default.publisher(for: .refreshCurrentPane)) { _ in
+            loadFiles()
+        }
+    }
+    
+    // MARK: - Sort Menu
+    
+    private var sortMenu: some View {
+        Menu {
+            ForEach(SortField.allCases, id: \.self) { field in
+                Button {
+                    if sortField == field { sortAscending.toggle() }
+                    else { sortField = field; sortAscending = true }
+                } label: {
+                    if sortField == field {
+                        Label(field.rawValue, systemImage: sortAscending ? "chevron.up" : "chevron.down")
+                    } else {
+                        Text(field.rawValue)
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: "arrow.up.arrow.down")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+        }
+        .menuStyle(.borderlessButton)
+        .frame(width: 20)
     }
     
     // MARK: - Path Bar
@@ -38,6 +136,28 @@ struct PaneContentView: View {
     private var pathBar: some View {
         let comps = pane.currentDirectory.pathComponents
         return HStack(spacing: 4) {
+            // 后退按钮
+            Button {
+                goBack()
+            } label: {
+                Image(systemName: "chevron.backward")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(backStack.isEmpty ? .tertiary : .secondary)
+            }
+            .buttonStyle(.plain)
+            .disabled(backStack.isEmpty)
+            
+            // 前进按钮
+            Button {
+                goForward()
+            } label: {
+                Image(systemName: "chevron.forward")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(forwardStack.isEmpty ? .tertiary : .secondary)
+            }
+            .buttonStyle(.plain)
+            .disabled(forwardStack.isEmpty)
+            
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 2) {
                     ForEach(0..<comps.count, id: \.self) { i in
@@ -49,7 +169,7 @@ struct PaneContentView: View {
                         let partial = "/" + comps[0...i].joined(separator: "/")
                         let url = URL(fileURLWithPath: partial)
                         Button {
-                            pane.navigateTo(url)
+                            navigateTo(url, recordHistory: true)
                         } label: {
                             Text(url.lastPathComponent)
                                 .font(.caption)
@@ -70,7 +190,7 @@ struct PaneContentView: View {
     
     private var fileListBody: some View {
         List(selection: $pane.selectedFiles) {
-            ForEach(pane.files) { file in
+            ForEach(filteredFiles) { file in
                 FileRow(file: file)
                     .tag(file.url)
                     .contextMenu { contextMenu(for: file) }
@@ -80,11 +200,25 @@ struct PaneContentView: View {
         .overlay {
             if pane.isLoading {
                 ProgressView()
+            } else if let error = pane.errorMessage {
+                ContentUnavailableView {
+                    Label("无法读取", systemImage: "exclamationmark.triangle")
+                } description: {
+                    Text(error)
+                } actions: {
+                    Button("重试") { loadFiles() }
+                }
             } else if pane.files.isEmpty {
                 ContentUnavailableView {
                     Label("空文件夹", systemImage: "folder")
                 } description: {
                     Text("此文件夹没有可见内容")
+                }
+            } else if filteredFiles.isEmpty {
+                ContentUnavailableView {
+                    Label("无匹配结果", systemImage: "magnifyingglass")
+                } description: {
+                    Text("没有匹配 \"\(searchQuery)\" 的文件")
                 }
             }
         }
@@ -97,6 +231,11 @@ struct PaneContentView: View {
                 previewFile = nil
             }
         }
+        .onKeyPress(.downArrow) { handleKeyDown(); return .handled }
+        .onKeyPress(.upArrow) { handleKeyUp(); return .handled }
+        .onKeyPress(.return) { handleKeyEnter(); return .handled }
+        .onKeyPress(.delete) { handleKeyBackspace(); return .handled }
+        .focusable()
     }
     
     // MARK: - Status Bar
@@ -108,6 +247,11 @@ struct PaneContentView: View {
                 Text("·")
                 Text("已选 \(pane.selectedFiles.count) 个")
                     .foregroundStyle(Color.accentColor)
+            }
+            if !searchQuery.isEmpty {
+                Text("·")
+                Text("匹配 \(filteredFiles.count) 个")
+                    .foregroundStyle(.secondary)
             }
             Spacer()
             if let vol = freeSpace {
@@ -125,13 +269,82 @@ struct PaneContentView: View {
             .flatMap { v in v.volumeAvailableCapacityForImportantUsage.map { Int64($0) } }
     }
     
+    // MARK: - Navigation
+    
+    private func navigateTo(_ url: URL, recordHistory: Bool) {
+        guard url != pane.currentDirectory else { return }
+        if recordHistory {
+            backStack.append(pane.currentDirectory)
+            forwardStack.removeAll()
+        }
+        pane.navigateTo(url)
+    }
+    
+    private func goBack() {
+        guard let prev = backStack.popLast() else { return }
+        forwardStack.append(pane.currentDirectory)
+        pane.navigateTo(prev)
+    }
+    
+    private func goForward() {
+        guard let next = forwardStack.popLast() else { return }
+        backStack.append(pane.currentDirectory)
+        pane.navigateTo(next)
+    }
+    
+    // MARK: - Keyboard
+    
+    private func handleKeyEnter() {
+        guard let selectedURL = pane.selectedFiles.first,
+              let file = pane.files.first(where: { $0.url == selectedURL }) else { return }
+        if file.isDirectory {
+            navigateTo(file.url, recordHistory: true)
+        } else {
+            NSWorkspace.shared.open(file.url)
+        }
+    }
+    
+    private func handleKeyBackspace() {
+        let parent = pane.currentDirectory.deletingLastPathComponent()
+        if parent != pane.currentDirectory {
+            navigateTo(parent, recordHistory: true)
+        }
+    }
+    
+    private func handleKeyDown() {
+        let files = filteredFiles
+        guard !files.isEmpty else { return }
+        if pane.selectedFiles.isEmpty {
+            pane.selectedFiles = [files[0].url]
+        } else if let currentURL = pane.selectedFiles.first,
+                  let idx = files.firstIndex(where: { $0.url == currentURL }),
+                  idx + 1 < files.count {
+            pane.selectedFiles = [files[idx + 1].url]
+        }
+    }
+    
+    private func handleKeyUp() {
+        let files = filteredFiles
+        guard !files.isEmpty else { return }
+        if pane.selectedFiles.isEmpty {
+            pane.selectedFiles = [files[0].url]
+        } else if let currentURL = pane.selectedFiles.first,
+                  let idx = files.firstIndex(where: { $0.url == currentURL }),
+                  idx > 0 {
+            pane.selectedFiles = [files[idx - 1].url]
+        }
+    }
+    
     // MARK: - Context Menu
     
     @ViewBuilder
     private func contextMenu(for file: FileItem) -> some View {
         Button("打开") {
-            if file.isDirectory { pane.navigateTo(file.url) }
-            else { NSWorkspace.shared.open(file.url) }
+            if file.isDirectory {
+                navigateTo(file.url, recordHistory: true)
+            } else {
+                NSWorkspace.shared.open(file.url)
+            }
         }
         Button("在 Finder 中显示") {
             NSWorkspace.shared.activateFileViewerSelecting([file.url])
@@ -165,10 +378,15 @@ struct PaneContentView: View {
     
     // MARK: - Helpers
     
-    private func loadFiles() {
+    func loadFiles() {
         pane.isLoading = true
-        do { pane.files = try fileEngine.contents(of: pane.currentDirectory) }
-        catch { pane.errorMessage = error.localizedDescription }
+        pane.errorMessage = nil
+        do {
+            pane.files = try fileEngine.contents(of: pane.currentDirectory)
+        } catch {
+            pane.errorMessage = error.localizedDescription
+            pane.files = []
+        }
         pane.isLoading = false
     }
     
@@ -184,6 +402,13 @@ struct PaneContentView: View {
         }
         return true
     }
+}
+
+// MARK: - Notification for file system changes
+
+extension Notification.Name {
+    static let fileSystemChanged = Notification.Name("fileSystemChanged")
+    static let refreshCurrentPane = Notification.Name("refreshCurrentPane")
 }
 
 // MARK: - File Row

@@ -2,6 +2,45 @@
 
 ---
 
+## v0.11.0 — 2026-05-14
+
+### 文件浏览器核心体验升级
+
+**PaneView 全面增强**:
+- 双击/回车键进入文件夹，Backspace 返回上级目录
+- 完整导航历史栈 — 后退/前进按钮可用
+- 搜索栏 — 实时过滤当前目录文件
+- 排序菜单 — 按名称/大小/日期/类型排序，文件夹始终在前
+- 错误状态显示 — 权限错误等会显示在 UI 中，附带重试按钮
+- 键盘导航 — 上下箭头选择文件，Enter 打开，Delete 返回上级
+- 文件系统变化自动刷新 — 监听 .fileSystemChanged 通知
+
+**RuleMonitor 核心实现**:
+- `handleFileChange()` 从 TODO 变为完整实现
+- 文件变化 → 1 秒防抖 → 匹配规则 → 自动执行
+- 变化事件广播 `.fileSystemChanged` 通知 UI 刷新
+- 使用共享的 `ruleEngine` 和 `fileEngine` 实例
+
+**AIEngine 连接 Settings**:
+- temperature 和 max_tokens 不再硬编码
+- 从 UserDefaults (`llm_temperature`, `llm_max_tokens`) 读取
+- 修复 URL 强制解包 — 改用 `guard let` + 错误抛出
+- chatWithSkill 也使用用户配置的参数
+
+**菜单命令全部可用**:
+- 新建文件夹（自动命名 + 避免冲突）
+- 拷贝路径（选中文件 or 当前目录）
+- 刷新（广播 .refreshCurrentPane）
+- runAllRules 通知现在有监听者（RunAllRulesObserver）
+
+### 构建状态
+
+BUILD SUCCEEDED (macOS, arm64, Debug + Release) — **0 errors**
+
+**运行验证**: 应用正常启动，文件浏览/导航/搜索/排序/菜单命令均可用
+
+---
+
 ## v0.10.0 — 2026-05-14
 
 ### P0 关键修复：应用启动崩溃
