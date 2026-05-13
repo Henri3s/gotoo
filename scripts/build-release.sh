@@ -3,12 +3,21 @@ set -euo pipefail
 
 # Gotoo 本地打包脚本
 # 用法: ./scripts/build-release.sh [版本号]
-# 示例: ./scripts/build-release.sh 0.8.0
+# 如果不传版本号，从 git tag 自动读取
 
-VERSION="${1:-0.8.0}"
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 BUILD_DIR="$PROJECT_DIR/build"
 DIST_DIR="$PROJECT_DIR/dist"
+
+# 自动获取版本号：优先参数 → git tag → 回退 0.1.0
+if [ -n "${1:-}" ]; then
+  VERSION="$1"
+elif git describe --tags --exact-match HEAD 2>/dev/null; then
+  VERSION="$(git describe --tags --exact-match HEAD | sed 's/^v//')"
+else
+  VERSION="0.1.0"
+fi
+
 DMG_NAME="Gotoo-${VERSION}"
 
 echo "==> 构建 Gotoo v${VERSION} Release..."
@@ -52,7 +61,7 @@ echo "    大小: $(du -sh "$APP_PATH" | cut -f1)"
 # 创建 DMG
 echo "==> 创建 DMG..."
 hdiutil create \
-  -volname "Gotoo" \
+  -volname "Gotoo ${VERSION}" \
   -srcfolder "$APP_PATH" \
   -ov \
   -format UDZO \
@@ -67,7 +76,8 @@ echo "==> 完成!"
 echo "    DMG:  $DIST_DIR/${DMG_NAME}.dmg ($(du -sh "${DMG_NAME}.dmg" | cut -f1))"
 echo "    SHA:  $(cat ${DMG_NAME}.dmg.sha256)"
 echo ""
-echo "    发布:"
-echo "      git add -A && git commit -m 'v${VERSION}'"
-echo "      git tag v${VERSION}"
-echo "      git push origin main --tags"
+echo "    发布到 GitHub Release:"
+echo "      gh release create v${VERSION} ${DMG_NAME}.dmg#${DMG_NAME}.dmg ${DMG_NAME}.dmg.sha256#checksums.txt --title 'Gotoo v${VERSION}' --notes-file $PROJECT_DIR/CHANGELOG.md"
+echo ""
+echo "    或手动上传:"
+echo "      https://github.com/Henri3s/gotoo/releases/new?tag=v${VERSION}"
