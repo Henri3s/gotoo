@@ -1,118 +1,123 @@
-# Gotoo - macOS 智能文件管理器
+# Gotoo
 
-<p align="center">
-  <strong>Finder + Hazel + AI = Gotoo</strong><br>
-  macOS 原生智能文件管理器，自动化规则引擎 + AI 助手
-</p>
+macOS 智能文件管理器 — 规则驱动的自动化 + AI 文件指令
 
-## 特性
+## 功能特性
 
-### 文件浏览
-- **多面板布局** — 单栏/双栏/三栏切换（QSpace 风格）
-- **标签页系统** — 每个面板支持多标签，独立导航
-- **拖放操作** — 从 Finder 拖入文件自动复制到当前面板
-- **文件预览** — 图片/文本/PDF 内联预览
-- **路径导航** — 面包屑地址栏，点击任意层级跳转
-- **收藏夹** — 系统预设 + 自定义书签文件夹
-- **状态栏** — 文件数量、选择数量、磁盘可用空间
+### 🤖 AI 文件助手
+- 用自然语言描述文件操作，AI 自动生成执行计划
+- 支持 DeepSeek / OpenAI / Claude 等多种 LLM
+- 文件夹级别自定义提示词
 
-### 自动化规则（Hazel 风格）
-- **7 种条件** — 扩展名/名称/正则/大小/时间/标签
-- **5 种动作** — 移动/复制/重命名/废纸篓/Finder 显示
-- **后台监控** — DispatchSource 实时监听文件夹变化
-- **自动执行** — 文件变更时自动匹配并执行规则
-- **执行日志** — 带时间戳的操作记录，成功/失败状态
-- **系统托盘** — 菜单栏快速启停监控、查看最近日志
+### ⚡ 规则引擎
+- 30+ 条件类型（文件名/扩展名/大小/日期/类型匹配...）
+- 15+ 动作类型（移动/复制/重命名/删除/压缩/标签/通知...）
+- AND/OR 条件组合
+- 自动/需确认/仅手动三种运行模式
+- 定时执行（按周几/时间窗口/间隔）
 
-### AI 助手
-- **OpenAI 兼容** — 支持 SiliconFlow/DeepSeek/OpenAI/本地 Ollama
-- **Function Calling** — AI 返回结构化文件操作计划
-- **操作预览** — 执行前展示所有操作，用户确认后才执行
-- **智能建议** — 一键触发常见整理任务
-- **自然语言** — "帮我整理下载文件夹" 即可开始
+### 🛠 技能系统
+- 6 个内置技能（智能分类/清理下载/批量重命名/去重分析/照片整理/空间分析）
+- 支持自定义 AI 技能和 Shell 脚本技能
+- 技能可绑定到特定文件夹
 
-### 快捷键
-| 快捷键 | 功能 |
-|--------|------|
-| ⌘T | 新建标签页 |
-| ⌘W | 关闭标签页 |
-| ⌘U | 切换到下一个面板 |
-| ⌘⇧1/2/3 | 切换单栏/双栏/三栏 |
-| ⌘⇧S | 切换侧边栏 |
-| ⌘⇧P | 切换预览面板 |
-| ⌘⇧I | 打开 AI 面板 |
-| ⌘⌥C | 拷贝文件路径 |
-| ⌘⌥T | 在终端中打开 |
-| ⌘⇧N | 新建文件夹 |
+### 📋 规则模板
+- 10 个预设模板，一键创建规则
+- 支持模板导入/导出 (JSON)
+
+### 📂 多面板浏览
+- 单栏/双栏/三栏布局切换
+- 收藏夹快速导航
+- 操作历史 + 撤销 (50 层)
 
 ## 系统要求
 
-- macOS 14.0 (Sonoma) 或更高
+- macOS 15.0 (Sequoia) 或更高
 - Apple Silicon / Intel
 
-## 构建
+## 安装
+
+### 从 GitHub Release 下载
+
+1. 下载最新的 `Gotoo-x.x.x.dmg`
+2. 打开 DMG，将 Gotoo.app 拖入「应用程序」文件夹
+3. 首次打开时，右键点击 → 打开（绕过 Gatekeeper）
+
+### 从源码构建
 
 ```bash
 git clone https://github.com/Henri3s/gotoo.git
 cd gotoo
-open gotoo.xcodeproj
-# Xcode → Run (⌘R)
+xcodebuild -project gotoo.xcodeproj -scheme gotoo \
+  -destination 'platform=macOS' \
+  CODE_SIGN_IDENTITY="-" CODE_SIGNING_REQUIRED=NO \
+  build
 ```
 
-## AI 配置
+或使用构建脚本：
+
+```bash
+./scripts/build-release.sh
+# 产出: dist/Gotoo-x.x.x.dmg
+```
+
+## 配置
+
+### AI 模型
 
 打开 Gotoo → 设置 → AI 模型：
 
-| 字段 | 默认值 |
-|------|--------|
-| API Base URL | `https://api.siliconflow.cn/v1` |
-| API Key | 你的 API Key |
-| 模型 | `deepseek-ai/DeepSeek-V4-Flash` |
+- 选择预设（DeepSeek / OpenAI / Claude）或自定义 API 地址
+- 输入 API Key（通过 macOS Keychain 安全存储）
+- 调整温度和最大 Token 数
+
+### 快捷键
+
+| 快捷键 | 功能 |
+|--------|------|
+| `Cmd+Shift+I` | 切换 AI 面板 |
+| `Cmd+Shift+R` | 打开规则管理 |
+| `Cmd+Shift+K` | 打开技能库 |
+| `Cmd+Shift+H` | 打开历史记录 |
+| `Cmd+Shift+E` | 立即执行所有规则 |
+| `Cmd+\` | 切换到下一个面板 |
+| `Cmd+[` | 后退 |
 
 ## 项目结构
 
 ```
 gotoo/
-├── gotooApp.swift              # App 入口 + MenuBarExtra
-├── ContentView.swift           # 主窗口（多面板 + 侧边栏）
 ├── Core/
-│   ├── Models/
-│   │   ├── AppState.swift      # 全局状态
-│   │   ├── PaneManager.swift   # 面板/标签管理
-│   │   └── SidebarItem.swift   # 侧边栏数据模型
-│   ├── FileEngine/             # 文件操作 + 监控
-│   ├── RuleEngine/
-│   │   ├── FileRule.swift      # 规则数据模型
-│   │   ├── RuleEngine.swift    # 规则匹配引擎
-│   │   └── RuleMonitor.swift   # 后台监控执行器
-│   └── AIEngine/
-│       ├── AIEngine.swift      # LLM API + Function Calling
-│       ├── AIActionPlan.swift  # 操作计划数据模型
-│       └── LLMSettings.swift   # SwiftData 持久化
+│   ├── AIEngine/          # LLM 集成、操作计划解析
+│   ├── FileEngine/        # 文件操作、分类定义
+│   ├── FolderConfig/      # 文件夹级配置
+│   ├── History/           # 操作历史 + 撤销栈
+│   ├── Models/            # AppState, PaneManager, FileItem
+│   ├── RuleEngine/        # 规则匹配 + 执行引擎 + 监控
+│   ├── RuleTemplates/     # 预设模板
+│   ├── Security/          # Keychain 安全存储
+│   └── SkillEngine/       # AI/Shell 技能执行
 ├── Features/
-│   ├── Browser/
-│   │   ├── PaneView.swift      # 面板视图（标签+列表+预览）
-│   │   ├── FilePreviewView.swift
-│   │   └── FavoritesManagerView.swift
-│   ├── Rules/
-│   │   ├── RulesView.swift     # 规则管理 UI
-│   │   └── MonitorLogView.swift
-│   ├── AI/
-│   │   └── AIPanelView.swift   # AI 对话面板
-│   └── Settings/
-│       └── SettingsView.swift
-└── Shared/
-    └── Components/
-        └── GotooCommands.swift  # 菜单栏 + 快捷键
+│   ├── AI/                # AI 对话面板
+│   ├── Browser/           # 文件浏览 + 侧边栏
+│   ├── FolderConfig/      # 文件夹配置编辑器
+│   ├── History/           # 历史面板
+│   ├── Rules/             # 规则编辑器
+│   ├── Settings/          # 偏好设置
+│   ├── Skills/            # 技能浏览器
+│   └── Templates/         # 模板浏览器
+└── Shared/Components/     # 菜单栏 + 快捷键
 ```
 
-## 版本历史
+## 技术栈
 
-- **v0.5** — 文件预览、侧边栏、收藏夹、增强右键菜单、快捷键
-- **v0.4** — AI Function Calling 操作预览 + 用户确认
-- **v0.3** — 后台规则监控、执行日志、系统托盘
-- **v0.2** — 多面板布局、标签页、拖放、状态栏
-- **v0.1** — 初始版本：文件浏览、规则引擎、AI 对话
+- **SwiftUI** + **SwiftData** (macOS native)
+- **Swift 6** strict concurrency
+- **@Observable** macro
+- **Keychain Services** (API Key 安全存储)
+- **UserNotifications** (系统通知)
+- **DispatchSource vnode** (文件系统监控)
+- 无第三方依赖
 
 ## License
 

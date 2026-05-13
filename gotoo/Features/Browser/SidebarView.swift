@@ -4,14 +4,27 @@ import SwiftUI
 struct SidebarView: View {
     @Environment(AppState.self) private var appState
     
+    private let defaultFavorites: [(name: String, url: URL)] = {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        return [
+            ("主目录", home),
+            ("桌面", home.appendingPathComponent("Desktop")),
+            ("文稿", home.appendingPathComponent("Documents")),
+            ("下载", home.appendingPathComponent("Downloads")),
+            ("图片", home.appendingPathComponent("Pictures")),
+            ("音乐", home.appendingPathComponent("Music")),
+            ("影片", home.appendingPathComponent("Movies")),
+        ]
+    }()
+    
     var body: some View {
         List {
             Section("收藏夹") {
-                ForEach(FileEngine.favorites, id: \.0) { name, url in
+                ForEach(defaultFavorites, id: \.name) { item in
                     Button {
-                        appState.paneManager.activePane.navigateTo(url)
+                        appState.paneManager.activePane.navigateTo(item.url)
                     } label: {
-                        Label(name, systemImage: iconForFavorite(name))
+                        Label(item.name, systemImage: iconForFavorite(item.name))
                     }
                     .buttonStyle(.plain)
                 }
@@ -29,21 +42,43 @@ struct SidebarView: View {
                     }
                 }
             }
+            
+            Section("工具") {
+                Button {
+                    appState.showRulesPanel = true
+                } label: {
+                    Label("自动化规则", systemImage: "gearshape")
+                }
+                .buttonStyle(.plain)
+                
+                Button {
+                    appState.showSkillPanel = true
+                } label: {
+                    Label("技能库", systemImage: "star")
+                }
+                .buttonStyle(.plain)
+                
+                Button {
+                    appState.showTemplatePanel = true
+                } label: {
+                    Label("规则模板", systemImage: "square.grid.2x2")
+                }
+                .buttonStyle(.plain)
+            }
         }
         .listStyle(.sidebar)
-        .navigationTitle("Gotoo")
     }
     
     private func iconForFavorite(_ name: String) -> String {
         switch name {
-        case "主目录": return "house.fill"
+        case "主目录": return "house"
         case "桌面": return "menubar.dock.rectangle"
-        case "文稿": return "doc.fill"
-        case "下载": return "arrow.down.circle.fill"
-        case "图片": return "photo.fill"
+        case "文稿": return "doc"
+        case "下载": return "arrow.down.circle"
+        case "图片": return "photo"
         case "音乐": return "music.note"
-        case "影片": return "film.fill"
-        default: return "folder.fill"
+        case "影片": return "film"
+        default: return "folder"
         }
     }
 }

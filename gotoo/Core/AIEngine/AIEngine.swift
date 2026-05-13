@@ -8,8 +8,18 @@ final class AIEngine {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest = 90
         config.timeoutIntervalForResource = 120
+        config.waitsForConnectivity = true
         return URLSession(configuration: config)
     }()
+    
+    /// 当前活跃的请求 Task，用于取消
+    private var activeTask: Task<(Data, URLResponse), Error>?
+    
+    /// 取消当前进行中的请求
+    func cancelRequest() {
+        activeTask?.cancel()
+        activeTask = nil
+    }
     
     // MARK: - API Types
     
@@ -75,7 +85,7 @@ final class AIEngine {
         }
     }
     
-    // MARK: - Tool Definitions
+    // MARK: - Tool Definitions (增强版)
     
     private static let toolDefs: [Request.ToolDef] = [
         .init(type: "function", function: .init(
@@ -92,8 +102,9 @@ final class AIEngine {
                             "type": "object",
                             "properties": {
                                 "source": {"type": "string", "description": "源文件名"},
-                                "action": {"type": "string", "enum": ["move", "copy", "rename", "trash", "createFolder"]},
-                                "destination": {"type": "string", "description": "目标路径或新名称"}
+                                "action": {"type": "string", "enum": ["move", "copy", "rename", "trash", "createFolder", "addTag", "compress", "notify"]},
+                                "destination": {"type": "string", "description": "目标路径或新名称"},
+                                "tag": {"type": "string", "description": "标签名 (for addTag)"}
                             },
                             "required": ["source", "action"]
                         }
@@ -113,9 +124,67 @@ final class AIEngine {
         context: String,
         baseURL: String,
         apiKey: String,
+        model: String,
+        systemPromptOverride: String? = nil,
+        conversationHistory: [(role: String, content: String)] = []
+    ) async throws -> String {
+        let systemPrompt = systemPromptOverride ?? buildSystemPrompt(context: context)
+        let url = URL(string: baseURL + "/chat/completions")!
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        
+        // 构建消息列表（包含历史）
+        var messages: [Request.Message] = [
+            .init(role: "system", content: systemPrompt, tool_calls: nil, tool_call_id: nil),
+        ]
+        
+        // 添加对话历史
+        for hist in conversationHistory {
+            messages.append(.init(role: hist.role, content: hist.content, tool_calls: nil, tool_call_id: nil))
+        }
+        
+        // 添加当前消息
+        messages.append(.init(role: "user", content: message, tool_calls: nil, tool_call_id: nil))
+        
+        let body = Request(
+            model: model,
+            messages: messages,
+            max_tokens: 4096,
+            temperature: 0.3,
+            tools: Self.toolDefs,
+            tool_choice: .init(type: "auto")
+        )
+        request.httpBody = try JSONEncoder().encode(body)
+        
+        let (data, _) = try await performRequestWithRetry(request)
+        
+        if let errorResp = try? JSONDecoder().decode(APIError.self, from: data) {
+            throw AIError.apiError(errorResp.error.message)
+        }
+        
+        let response = try JSONDecoder().decode(Response.self, from: data)
+        
+        if let toolCall = response.choices.first?.message.tool_calls?.first {
+            let args = toolCall.function.arguments
+            return args
+        }
+        
+        return response.choices.first?.message.content ?? "无响应"
+    }
+    
+    /// 使用技能执行
+    func chatWithSkill(
+        message: String,
+        context: String,
+        skillPrompt: String,
+        baseURL: String,
+        apiKey: String,
         model: String
     ) async throws -> String {
-        let systemPrompt = buildSystemPrompt(context: context)
+        let systemPrompt = buildSkillPrompt(skillContext: skillPrompt, fileContext: context)
         let url = URL(string: baseURL + "/chat/completions")!
         
         var request = URLRequest(url: url)
@@ -136,19 +205,16 @@ final class AIEngine {
         )
         request.httpBody = try JSONEncoder().encode(body)
         
-        let (data, _) = try await session.data(for: request)
+        let (data, _) = try await performRequestWithRetry(request)
         
-        // Check for API error
         if let errorResp = try? JSONDecoder().decode(APIError.self, from: data) {
             throw AIError.apiError(errorResp.error.message)
         }
         
         let response = try JSONDecoder().decode(Response.self, from: data)
         
-        // If tool call, parse the organize_files result
         if let toolCall = response.choices.first?.message.tool_calls?.first {
-            let args = toolCall.function.arguments
-            return args  // Return raw JSON for the caller to parse
+            return toolCall.function.arguments
         }
         
         return response.choices.first?.message.content ?? "无响应"
@@ -165,6 +231,7 @@ final class AIEngine {
                 let source: String
                 let action: String
                 let destination: String?
+                let tag: String?
             }
         }
         
@@ -172,7 +239,7 @@ final class AIEngine {
         
         let ops = raw.operations.compactMap { op -> AIActionPlan.FileOperation? in
             guard let kind = AIActionPlan.FileOperation.ActionKind(rawValue: op.action) else { return nil }
-            return .init(source: op.source, action: kind, destination: op.destination)
+            return .init(source: op.source, action: kind, destination: op.destination, tag: op.tag)
         }
         
         return AIActionPlan(operations: ops, explanation: raw.explanation)
@@ -203,12 +270,34 @@ final class AIEngine {
                     _ = try engine.rename(sourceURL, to: newName)
                     results.append("OK: 重命名 \(op.source) → \(newName)")
                 case .trash:
-                    try engine.trash(sourceURL)
+                    _ = try engine.trash(sourceURL)
                     results.append("OK: 删除 \(op.source)")
                 case .createFolder:
                     guard let name = op.destination else { continue }
                     _ = try engine.createFolder(at: directory, name: name)
                     results.append("OK: 创建文件夹 \(name)")
+                case .addTag:
+                    let tagName = op.tag ?? op.destination ?? ""
+                    var mutableURL = sourceURL
+                    var currentTags = (try? mutableURL.resourceValues(forKeys: [.tagNamesKey])).flatMap { $0.tagNames ?? [] } ?? []
+                    if !currentTags.contains(tagName) {
+                        currentTags.append(tagName)
+                        var vals = URLResourceValues()
+                        vals.tagNames = currentTags
+                        try mutableURL.setResourceValues(vals)
+                    }
+                    results.append("OK: 添加标签 '\(tagName)' 到 \(op.source)")
+                case .compress:
+                    // 压缩文件
+                    let dest = directory.appendingPathComponent(op.source).deletingPathExtension().appendingPathExtension("zip")
+                    let process = Process()
+                    process.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
+                    process.arguments = ["-c", "-k", sourceURL.path, dest.path]
+                    try process.run()
+                    process.waitUntilExit()
+                    results.append("OK: 压缩 \(op.source)")
+                case .notify:
+                    results.append("OK: 通知 \(op.destination ?? "")")
                 }
             } catch {
                 results.append("失败: \(op.source) — \(error.localizedDescription)")
@@ -217,7 +306,7 @@ final class AIEngine {
         return results
     }
     
-    // MARK: - Private
+    // MARK: - Private - System Prompts
     
     private func buildSystemPrompt(context: String) -> String {
         """
@@ -227,7 +316,7 @@ final class AIEngine {
         \(context)
         
         当用户提出文件整理需求时，请调用 organize_files 工具，生成操作计划。
-        每个操作包含 source（文件名）、action（move/copy/rename/trash/createFolder）、destination（目标路径或新名称）。
+        每个操作包含 source（文件名）、action（move/copy/rename/trash/createFolder/addTag/compress/notify）、destination（目标路径或新名称）。
         
         规则：
         1. source 必须是当前目录中实际存在的文件名
@@ -235,8 +324,29 @@ final class AIEngine {
         3. destination 对于 rename 应该是新的文件名（不含路径）
         4. 操作前请先说明你的整理思路
         5. 用中文回复
+        6. 建议创建合理的子文件夹结构来归类文件
         
         如果用户只是提问或聊天（不涉及文件操作），直接回复文字即可，不要调用工具。
+        """
+    }
+    
+    private func buildSkillPrompt(skillContext: String, fileContext: String) -> String {
+        """
+        你是 Gotoo 文件管理器的 AI 助手，正在执行一个文件处理技能。
+        
+        技能描述：
+        \(skillContext)
+        
+        当前目录的文件列表：
+        \(fileContext)
+        
+        请调用 organize_files 工具来执行操作。
+        操作类型支持：move, copy, rename, trash, createFolder, addTag, compress, notify
+        
+        规则：
+        1. source 必须是实际存在的文件名
+        2. destination 对于 move/copy 应该是目标文件夹的绝对路径
+        3. 用中文回复
         """
     }
     
@@ -248,12 +358,43 @@ final class AIEngine {
     enum AIError: LocalizedError {
         case apiError(String)
         case noResponse
+        case cancelled
         
         var errorDescription: String? {
             switch self {
             case .apiError(let msg): return "API 错误: \(msg)"
             case .noResponse: return "无响应"
+            case .cancelled: return "请求已取消"
             }
         }
+    }
+    
+    // MARK: - Retry Logic
+    
+    private func performRequestWithRetry(_ request: URLRequest, maxRetries: Int = 2) async throws -> (Data, URLResponse) {
+        var lastError: Error?
+        
+        for attempt in 0...maxRetries {
+            do {
+                let task = Task { [weak self] in
+                    guard let self else { throw AIError.cancelled }
+                    return try await self.session.data(for: request)
+                }
+                self.activeTask = task
+                let result = try await task.value
+                self.activeTask = nil
+                return result
+            } catch is CancellationError {
+                self.activeTask = nil
+                throw AIError.cancelled
+            } catch {
+                self.activeTask = nil
+                lastError = error
+                if attempt < maxRetries {
+                    try await Task.sleep(nanoseconds: UInt64(pow(2.0, Double(attempt))) * 1_000_000_000)
+                }
+            }
+        }
+        throw lastError ?? AIError.noResponse
     }
 }

@@ -1,25 +1,52 @@
 import SwiftUI
+import SwiftData
 
 /// 主窗口 — 使用 NavigationSplitView 提供原生 sidebar + detail 布局
 struct MainWindow: View {
     @Environment(AppState.self) private var appState
+    @Environment(\.modelContext) private var modelContext
     @State private var columnVisibility: NavigationSplitViewVisibility = .doubleColumn
     
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
-            // MARK: - Sidebar
             SidebarView()
         } detail: {
-            // MARK: - Detail (多面板)
             detailContent
         }
         .navigationSplitViewStyle(.balanced)
-        .focusedValue(\.appState, appState)
         .sheet(isPresented: Binding(
             get: { appState.showRulesPanel },
             set: { appState.showRulesPanel = $0 }
         )) {
             RulesView()
+                .frame(minWidth: 700, minHeight: 550)
+        }
+        .sheet(isPresented: Binding(
+            get: { appState.showSkillPanel },
+            set: { appState.showSkillPanel = $0 }
+        )) {
+            SkillBrowserView()
+                .frame(minWidth: 600, minHeight: 500)
+        }
+        .sheet(isPresented: Binding(
+            get: { appState.showFolderConfigPanel },
+            set: { appState.showFolderConfigPanel = $0 }
+        )) {
+            FolderConfigView()
+                .frame(minWidth: 550, minHeight: 500)
+        }
+        .sheet(isPresented: Binding(
+            get: { appState.showHistoryPanel },
+            set: { appState.showHistoryPanel = $0 }
+        )) {
+            HistoryPanelView()
+                .frame(minWidth: 600, minHeight: 450)
+        }
+        .sheet(isPresented: Binding(
+            get: { appState.showTemplatePanel },
+            set: { appState.showTemplatePanel = $0 }
+        )) {
+            TemplateBrowserView()
                 .frame(minWidth: 600, minHeight: 500)
         }
     }
@@ -31,7 +58,6 @@ struct MainWindow: View {
         let paneCount = appState.paneManager.layout.count
         let activeIdx = appState.paneManager.activePaneIndex
         
-        // 用 HSplitView 实现原生分割面板
         HSplitView {
             ForEach(0..<paneCount, id: \.self) { index in
                 let pane = appState.paneManager.panes[index]
@@ -43,8 +69,7 @@ struct MainWindow: View {
             }
         }
         .toolbar {
-            // 左侧：导航
-            ToolbarItemGroup(placement: .primaryAction) {
+            ToolbarItemGroup(placement: .navigation) {
                 Button {
                     let parent = appState.paneManager.activePane.currentDirectory.deletingLastPathComponent()
                     appState.paneManager.activePane.navigateTo(parent)
@@ -54,7 +79,7 @@ struct MainWindow: View {
                 .help("后退")
                 
                 Button {
-                    loadActivePane()
+                    // 刷新由 PaneContentView 内部处理
                 } label: {
                     Label("刷新", systemImage: "arrow.clockwise")
                 }
@@ -68,49 +93,83 @@ struct MainWindow: View {
                     set: { appState.paneManager.setLayout($0) }
                 )) {
                     ForEach(PaneLayout.allCases) { layout in
-                        Image(systemName: layout == .single ? "rectangle" : layout == .dual ? "rectangle.split.1x2" : "rectangle.split.1x3")
-                            .tag(layout)
+                        Label(layout.rawValue, systemImage: layout.icon).tag(layout)
                     }
                 }
                 .pickerStyle(.segmented)
+                .frame(width: 160)
                 
                 Divider()
                 
-                Button {
-                    let _ = try? FileEngine().createFolder(
-                        at: appState.paneManager.activePane.currentDirectory,
-                        name: "未命名文件夹"
-                    )
-                    loadActivePane()
-                } label: {
-                    Label("新建文件夹", systemImage: "folder.badge.plus")
-                }
-                .help("新建文件夹")
-                
-                Button {
-                    appState.showRulesPanel.toggle()
-                } label: {
-                    Label("自动化规则", systemImage: "gearshape")
-                }
-                .help("自动化规则")
-                
+                // AI 面板
                 Button {
                     appState.showAIPanel.toggle()
                 } label: {
                     Label("AI 助手", systemImage: "sparkles")
                 }
-                .help("AI 助手")
+                .tint(appState.showAIPanel ? .accentColor : nil)
+                
+                // 技能
+                Button {
+                    appState.showSkillPanel = true
+                } label: {
+                    Label("技能", systemImage: "star")
+                }
+                
+                // 规则
+                Button {
+                    appState.showRulesPanel = true
+                } label: {
+                    Label("规则", systemImage: "gearshape")
+                }
+                
+                Divider()
+                
+                // 文件夹配置
+                Button {
+                    appState.showFolderConfigPanel = true
+                } label: {
+                    Label("文件夹配置", systemImage: "folder.badge.gearshape")
+                }
+                
+                // 历史记录
+                Button {
+                    appState.showHistoryPanel = true
+                } label: {
+                    Label("历史", systemImage: "clock.arrow.circlepath")
+                }
+                
+                // 撤销
+                Button {
+                    _ = appState.operationHistory.undo()
+                } label: {
+                    Label("撤销", systemImage: "arrow.uturn.backward")
+                }
+                .disabled(!appState.operationHistory.canUndo)
+            }
+        }
+        
+        // AI 面板 (右侧抽屉)
+        .overlay(alignment: .trailing) {
+            if appState.showAIPanel {
+                AIPanelView()
+                    .frame(width: 360)
+                    .background(.regularMaterial)
+                    .shadow(color: .black.opacity(0.2), radius: 8, x: -2, y: 0)
+                    .transition(.move(edge: .trailing))
             }
         }
     }
-    
-    private func loadActivePane() {
-        let pane = appState.paneManager.activePane
-        let engine = FileEngine()
-        do {
-            pane.files = try engine.contents(of: pane.currentDirectory)
-        } catch {
-            pane.errorMessage = error.localizedDescription
+}
+
+// MARK: - Pane Layout Icon
+
+extension PaneLayout {
+    var icon: String {
+        switch self {
+        case .single: return "rectangle"
+        case .dual: return "rectangle.split.1x2"
+        case .triple: return "rectangle.split.1x3"
         }
     }
 }

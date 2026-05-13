@@ -3,27 +3,82 @@ import Observation
 
 @Observable
 @MainActor
-final class AppState {
+final class AppState: @unchecked Sendable {
+    // MARK: - Panel Management
     var paneManager = PaneManager()
+    
+    // MARK: - Panels
     var showAIPanel = false
     var showRulesPanel = false
+    var showSkillPanel = false
+    var showFolderConfigPanel = false
+    var showHistoryPanel = false
+    var showTemplatePanel = false
     
-    // LLM
-    var llmBaseURL: String = "https://api.siliconflow.cn/v1"
-    var llmAPIKey: String = ""
-    var llmModel: String = "deepseek-ai/DeepSeek-V4-Flash"
+    // MARK: - LLM Configuration
+    var llmBaseURL: String {
+        didSet { UserDefaults.standard.set(llmBaseURL, forKey: "llm_base_url") }
+    }
+    
+    /// API Key — 优先从 Keychain 读取，回退到 UserDefaults（迁移用）
+    var llmAPIKey: String {
+        didSet { KeychainStore.save(key: "llm_api_key", value: llmAPIKey) }
+    }
+    
+    var llmModel: String {
+        didSet { UserDefaults.standard.set(llmModel, forKey: "llm_model") }
+    }
+    
     var llmIsConfigured: Bool { !llmAPIKey.isEmpty }
     
-    // AI
+    // MARK: - AI
     var isProcessingAI = false
-    var aiMessages: [AIMessage] = []
+    var aiMessages: [AIMessage] = [] {
+        didSet { trimMessages() }
+    }
+    var conversationHistory: [(role: String, content: String)] = []
     
-    // 自定义收藏夹
+    // MARK: - Favorites
     var customFavorites: [(name: String, url: URL)] = []
     
-    // 规则监控
+    // MARK: - Rules
     var ruleMonitor = RuleMonitor()
     var isMonitoringEnabled = false
+    
+    // MARK: - Skills
+    let skillEngine = SkillEngine()
+    var selectedSkill: FileSkill?
+    
+    // MARK: - History
+    let operationHistory = OperationHistory()
+    
+    // MARK: - Folder Config
+    var currentFolderConfig: FolderConfig?
+    
+    // MARK: - Navigation
+    var selectedSidebarItem: SidebarItem?
+    
+    // MARK: - Init (从持久化恢复)
+    
+    init() {
+        // 恢复 LLM 配置
+        self.llmBaseURL = UserDefaults.standard.string(forKey: "llm_base_url")
+            ?? "https://api.siliconflow.cn/v1"
+        self.llmModel = UserDefaults.standard.string(forKey: "llm_model")
+            ?? "deepseek-ai/DeepSeek-V4-Flash"
+        
+        // API Key: Keychain 优先，回退 UserDefaults（一次性迁移）
+        if let key = KeychainStore.load(key: "llm_api_key") {
+            self.llmAPIKey = key
+        } else if let legacy = UserDefaults.standard.string(forKey: "llm_api_key") {
+            // 迁移旧数据到 Keychain，清除 UserDefaults
+            self.llmAPIKey = legacy
+            KeychainStore.save(key: "llm_api_key", value: legacy)
+            UserDefaults.standard.removeObject(forKey: "llm_api_key")
+        } else {
+            self.llmAPIKey = ""
+        }
+    }
     
     func toggleMonitoring(rules: [FileRule]) {
         if isMonitoringEnabled {
@@ -32,6 +87,21 @@ final class AppState {
         } else {
             ruleMonitor.startMonitoring(rules: rules)
             isMonitoringEnabled = true
+        }
+    }
+    
+    /// 获取当前活动面板的 LLM 配置元组
+    var llmConfig: (baseURL: String, apiKey: String, model: String) {
+        (llmBaseURL, llmAPIKey, llmModel)
+    }
+    
+    // MARK: - AI Messages 限制
+    
+    private let maxMessages = 200
+    
+    private func trimMessages() {
+        if aiMessages.count > maxMessages {
+            aiMessages = Array(aiMessages.suffix(maxMessages))
         }
     }
 }

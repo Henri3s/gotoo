@@ -6,12 +6,15 @@ struct GotooApp: App {
     @State private var appState = AppState()
     
     var sharedModelContainer: ModelContainer = {
-        let schema = Schema([FileRule.self, LLMSettings.self])
+        let schema = Schema([FileRule.self, FileSkill.self, FolderConfig.self])
         let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
         do {
             return try ModelContainer(for: schema, configurations: [config])
         } catch {
-            fatalError("Could not create ModelContainer: \(error)")
+            // 优雅降级：记录错误，使用内存容器让 App 仍能启动
+            print("[Gotoo] ModelContainer 创建失败，使用内存模式: \(error)")
+            let fallbackConfig = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
+            return try! ModelContainer(for: schema, configurations: [fallbackConfig])
         }
     }()
     
@@ -54,6 +57,16 @@ struct MenuBarExtraContent: View {
             appState.ruleMonitor.runAllOnce(rules: rules)
         }
         
+        Button("打开规则模板") {
+            appState.showTemplatePanel = true
+            NSApp.activate(ignoringOtherApps: true)
+        }
+        
+        Button("打开技能库") {
+            appState.showSkillPanel = true
+            NSApp.activate(ignoringOtherApps: true)
+        }
+        
         Divider()
         
         let recentLogs = appState.ruleMonitor.executionLog.suffix(5)
@@ -65,6 +78,13 @@ struct MenuBarExtraContent: View {
                     .font(.caption)
             }
         }
+        
+        Divider()
+        
+        let stats = appState.operationHistory.todayStats
+        Text("今日: \(stats.total) 操作, \(stats.success) 成功")
+            .font(.caption)
+            .foregroundStyle(.secondary)
         
         Divider()
         
