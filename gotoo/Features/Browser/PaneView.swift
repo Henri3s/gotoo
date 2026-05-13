@@ -152,13 +152,13 @@ struct PaneContentView: View {
         Divider()
         if pane.selectedFiles.count > 1 {
             Button("移到废纸篓 (\(pane.selectedFiles.count) 个)", role: .destructive) {
-                for url in pane.selectedFiles { try? fileEngine.trash(url) }
+                for url in pane.selectedFiles { _ = try? fileEngine.trash(url) }
                 pane.selectedFiles.removeAll()
                 loadFiles()
             }
         }
         Button("移到废纸篓", role: .destructive) {
-            try? fileEngine.trash(file.url)
+            _ = try? fileEngine.trash(file.url)
             loadFiles()
         }
     }

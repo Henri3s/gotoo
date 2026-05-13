@@ -1,8 +1,9 @@
 import SwiftUI
-import SwiftData
 
+/// App 菜单命令
+/// 注意: Commands 不是 View，不能使用 @Environment
+/// 必须通过 AppState.shared 单例访问
 struct GotooCommands: Commands {
-    @Environment(AppState.self) private var appState
     
     var body: some Commands {
         // 文件菜单
@@ -23,7 +24,7 @@ struct GotooCommands: Commands {
         // 编辑菜单
         CommandGroup(after: .pasteboard) {
             Button("撤销操作") {
-                _ = appState.operationHistory.undo()
+                _ = AppState.shared.operationHistory.undo()
             }
             .keyboardShortcut("z", modifiers: [.command])
             
@@ -38,8 +39,8 @@ struct GotooCommands: Commands {
         // 视图菜单
         CommandMenu("视图") {
             Picker("面板布局", selection: Binding(
-                get: { appState.paneManager.layout },
-                set: { appState.paneManager.setLayout($0) }
+                get: { AppState.shared.paneManager.layout },
+                set: { AppState.shared.paneManager.setLayout($0) }
             )) {
                 Text("单栏").tag(PaneLayout.single)
                 Text("双栏").tag(PaneLayout.dual)
@@ -49,7 +50,7 @@ struct GotooCommands: Commands {
             Divider()
             
             Button("切换 AI 面板") {
-                appState.showAIPanel.toggle()
+                AppState.shared.showAIPanel.toggle()
             }
             .keyboardShortcut("i", modifiers: [.command, .shift])
             
@@ -61,7 +62,7 @@ struct GotooCommands: Commands {
             Divider()
             
             Button("切换到下一面板") {
-                appState.paneManager.nextPane()
+                AppState.shared.paneManager.nextPane()
             }
             .keyboardShortcut("\\", modifiers: [.command])
         }
@@ -69,35 +70,38 @@ struct GotooCommands: Commands {
         // 工具菜单
         CommandMenu("工具") {
             Button("自动化规则...") {
-                appState.showRulesPanel = true
+                AppState.shared.showRulesPanel = true
+                NSApp.activate(ignoringOtherApps: true)
             }
             .keyboardShortcut("r", modifiers: [.command, .shift])
             
             Button("技能库...") {
-                appState.showSkillPanel = true
+                AppState.shared.showSkillPanel = true
+                NSApp.activate(ignoringOtherApps: true)
             }
             .keyboardShortcut("k", modifiers: [.command, .shift])
             
             Button("规则模板...") {
-                appState.showTemplatePanel = true
+                AppState.shared.showTemplatePanel = true
+                NSApp.activate(ignoringOtherApps: true)
             }
             
             Divider()
             
             Button("文件夹配置...") {
-                appState.showFolderConfigPanel = true
+                AppState.shared.showFolderConfigPanel = true
+                NSApp.activate(ignoringOtherApps: true)
             }
             
             Button("操作历史...") {
-                appState.showHistoryPanel = true
+                AppState.shared.showHistoryPanel = true
+                NSApp.activate(ignoringOtherApps: true)
             }
             .keyboardShortcut("h", modifiers: [.command, .shift])
             
             Divider()
             
             Button("立即执行所有规则") {
-                // 需要拿到 rules，通过 modelContext query
-                // 在 Commands 中无法直接 @Query，通过 notification 传递
                 NotificationCenter.default.post(name: .runAllRules, object: nil)
             }
             .keyboardShortcut("e", modifiers: [.command, .shift])
@@ -106,8 +110,8 @@ struct GotooCommands: Commands {
         // 跳转菜单
         CommandMenu("跳转") {
             Button("后退") {
-                let parent = appState.paneManager.activePane.currentDirectory.deletingLastPathComponent()
-                appState.paneManager.activePane.navigateTo(parent)
+                let parent = AppState.shared.paneManager.activePane.currentDirectory.deletingLastPathComponent()
+                AppState.shared.paneManager.activePane.navigateTo(parent)
             }
             .keyboardShortcut("[", modifiers: [.command])
             
@@ -119,19 +123,19 @@ struct GotooCommands: Commands {
             Divider()
             
             Button("聚焦第一个面板") {
-                appState.paneManager.focusPane(index: 0)
+                AppState.shared.paneManager.focusPane(index: 0)
             }
             .keyboardShortcut("1", modifiers: [.command])
             
             Button("聚焦第二个面板") {
-                appState.paneManager.focusPane(index: 1)
+                AppState.shared.paneManager.focusPane(index: 1)
             }
             .keyboardShortcut("2", modifiers: [.command])
         }
     }
 }
 
-// MARK: - Notification Names (仅保留仍需通过通知传递的)
+// MARK: - Notification Names
 
 extension Notification.Name {
     static let runAllRules = Notification.Name("runAllRules")

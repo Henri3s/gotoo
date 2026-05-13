@@ -163,8 +163,8 @@ final class RuleMonitor {
         
         // 捕获规则引用（闭包中只用于检查 schedule）
         // FileRule 是 @Model (SwiftData)，在 @MainActor 上下文中使用是安全的
+        // non Sendable warning: FileRule 是 @Model，跨 actor 传递是安全的
         let capturedRules = scheduledRules
-        
         timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self else { return }

@@ -4,6 +4,11 @@ import Observation
 @Observable
 @MainActor
 final class AppState: @unchecked Sendable {
+    
+    /// 单例 — 供 Commands 等非 View 组件访问
+    /// View 中仍用 @Environment(AppState.self) 注入
+    static let shared = AppState()
+    
     // MARK: - Panel Management
     var paneManager = PaneManager()
     

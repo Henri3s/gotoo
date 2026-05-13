@@ -2,6 +2,29 @@
 
 ---
 
+## v0.10.0 — 2026-05-14
+
+### P0 关键修复：应用启动崩溃
+
+**根因**: `GotooCommands` 使用 `@Environment(AppState.self)` 但 SwiftUI Commands 不是 View——
+在 `applicationWillFinishLaunching` 阶段被求值，此时 `.environment(appState)` 尚未注入，
+触发 `_assertionFailure` (EXC_BREAKPOINT/SIGTRAP) 导致应用无法启动。
+
+**修复**:
+- AppState 新增 `static let shared` 单例
+- GotooCommands 改用 `AppState.shared` 访问状态
+- gotooApp 使用 `@State private var appState = AppState.shared` 确保全局唯一实例
+- Commands 中按钮操作添加 `NSApp.activate(ignoringOtherApps: true)` 确保面板能正确弹出
+- 修复 PaneView 中 2 处 `try?` 返回值未使用的 warning
+
+### 构建状态
+
+BUILD SUCCEEDED (macOS, arm64, Debug + Release) — **0 errors**
+
+**运行验证**: 应用正常启动，窗口正常显示，无崩溃报告
+
+---
+
 ## v0.9 — 2026-05-13
 
 ### 全面代码审查与修复 (12 模块系统性诊断)

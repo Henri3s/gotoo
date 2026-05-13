@@ -3,7 +3,9 @@ import SwiftData
 
 @main
 struct GotooApp: App {
-    @State private var appState = AppState()
+    /// 全局唯一 AppState — 通过 .environment() 注入到 View 树
+    /// Commands 等非 View 组件通过 AppState.shared 访问
+    @State private var appState = AppState.shared
     
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([FileRule.self, FileSkill.self, FolderConfig.self])
@@ -11,7 +13,6 @@ struct GotooApp: App {
         do {
             return try ModelContainer(for: schema, configurations: [config])
         } catch {
-            // 优雅降级：记录错误，使用内存容器让 App 仍能启动
             print("[Gotoo] ModelContainer 创建失败，使用内存模式: \(error)")
             let fallbackConfig = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
             return try! ModelContainer(for: schema, configurations: [fallbackConfig])
