@@ -5,15 +5,35 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version (leave empty to use tag name)'
+        required: false
+        type: string
+
+permissions:
+  contents: write
 
 jobs:
   build:
-    name: Build macOS App
+    name: Build & Release macOS App
     runs-on: macos-15
-    
+    timeout-minutes: 20
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Determine Version
+        id: version
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            VERSION="${{ inputs.version }}"
+          else
+            VERSION="${GITHUB_REF_NAME#v}"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Building version: $VERSION"
 
       - name: Setup Xcode
         uses: maxim-lobanov/setup-xcode@v1
@@ -31,57 +51,62 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             ENABLE_APP_SANDBOX=NO \
             ENABLE_HARDENED_RUNTIME=NO \
-            build
+            SYMROOT="build" \
+            clean build \
+            2>&1 | tail -5
 
       - name: Prepare App
         run: |
-          APP_PATH="$(find ~/Library/Developer/Xcode/DerivedData/gotoo-*/Build/Products/Release/gotoo.app -maxdepth 0 | head -1)"
-          echo "APP_PATH=$APP_PATH" >> $GITHUB_ENV
+          APP_PATH="build/Release/gotoo.app"
+          if [ ! -d "$APP_PATH" ]; then
+            echo "::error::App not found at $APP_PATH"
+            find build -name "gotoo.app" -type d
+            exit 1
+          fi
           
-          # Remove quarantine flag and debug symbols
-          cp -R "$APP_PATH" /tmp/Gotoo.app
-          rm -rf /tmp/Gotoo.app/Contents/MacOS/__preview.dylib 2>/dev/null || true
-          rm -rf /tmp/Gotoo.app/Contents/MacOS/gotoo.debug.dylib 2>/dev/null || true
+          # Remove debug symbols
+          rm -f "$APP_PATH/Contents/MacOS/__preview.dylib" 2>/dev/null || true
+          rm -f "$APP_PATH/Contents/MacOS/gotoo.debug.dylib" 2>/dev/null || true
           
-          # Ad-hoc sign the app
-          codesign --force --deep --sign - /tmp/Gotoo.app
+          # Strip extended attributes
+          xattr -cr "$APP_PATH"
+          
+          # Ad-hoc sign
+          codesign --force --deep --sign - "$APP_PATH"
+          
+          echo "App size: $(du -sh "$APP_PATH" | cut -f1)"
 
       - name: Create DMG
         run: |
-          brew install create-dmg 2>/dev/null || true
+          VERSION="${{ steps.version.outputs.version }}"
           
-          VERSION="${GITHUB_REF_NAME#v}"
-          
-          create-dmg \
-            --volname "Gotoo $VERSION" \
-            --volicon "/tmp/Gotoo.app/Contents/Resources/AppIcon.icns" \
-            --window-pos 200 120 \
-            --window-size 600 400 \
-            --icon-size 100 \
-            --icon "Gotoo.app" 175 190 \
-            --app-drop-link 425 190 \
-            --hide-extension "Gotoo.app" \
-            "Gotoo-${VERSION}.dmg" \
-            /tmp/Gotoo.app
+          hdiutil create \
+            -volname "Gotoo ${VERSION}" \
+            -srcfolder "build/Release/gotoo.app" \
+            -ov \
+            -format UDZO \
+            "Gotoo-${VERSION}.dmg"
 
-      - name: Generate SHA256
+      - name: Generate Checksums
         run: |
-          shasum -a 256 Gotoo-*.dmg > checksums.txt
+          VERSION="${{ steps.version.outputs.version }}"
+          shasum -a 256 "Gotoo-${VERSION}.dmg" > checksums.txt
           cat checksums.txt
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Gotoo-macOS
+          name: Gotoo-macOS-${{ steps.version.outputs.version }}
           path: |
             Gotoo-*.dmg
             checksums.txt
+          retention-days: 90
 
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          name: Gotoo ${{ github.ref_name }}
+          name: "Gotoo ${{ github.ref_name }}"
           draft: false
           prerelease: ${{ contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') }}
           files: |
@@ -89,31 +114,28 @@ jobs:
             checksums.txt
           body: |
             ## Gotoo ${{ github.ref_name }}
-            
+
             **智能文件管理器 — 规则驱动 + AI 加持**
-            
+
             ### 下载安装
-            
-            1. 下载 `Gotoo-*.dmg`
-            2. 双击打开 DMG，拖拽 Gotoo 到「应用程序」文件夹
+
+            1. 下载下方 `Gotoo-*.dmg` 文件
+            2. 双击打开 DMG，拖拽 Gotoo.app 到「应用程序」文件夹
             3. **首次打开**：右键点击 Gotoo → 选择「打开」→ 在弹窗中再次点击「打开」
-            
+
             > 如果提示"无法验证开发者"，在终端执行：
             > ```
             > xattr -cr /Applications/Gotoo.app
             > ```
-            
+
             ### 系统要求
             - macOS 15.0 (Sequoia) 或更高版本
             - Apple Silicon (M1/M2/M3/M4) 或 Intel Mac
-            
-            ### 功能
-            - 多面板文件浏览器（单栏/双栏/三栏）
-            - 自动化规则引擎（30+ 条件类型，15 种动作）
-            - AI 文件助手（支持任意 OpenAI 兼容 API）
-            - 技能系统（6 个内置技能，支持自定义）
-            - 文件夹级提示词配置
-            - 规则模板市场（10 个预设模板）
-            - 操作历史 + 撤销栈
+
+            ### 校验
+            ```
+            shasum -a 256 Gotoo-*.dmg
+            ```
+            与 `checksums.txt` 比对确认文件完整性。
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
